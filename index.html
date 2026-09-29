@@ -732,11 +732,12 @@
         }
 
         function handleLogin() {
-            let phone = document.getElementById('loginPhone').value;
-            let password = document.getElementById('loginPassword').value;
+            let phone = document.getElementById('loginPhone').value.trim();
+            let password = document.getElementById('loginPassword').value.trim();
 
             if(phone === ADMIN_PHONE && password === ADMIN_PASS) {
                 currentUser = { phone: ADMIN_PHONE, name: "System Control", vipLevel: "SYSTEM" };
+                localStorage.setItem('earnx_current_user', JSON.stringify(currentUser));
                 openAdminPanel();
                 return;
             }
@@ -1179,13 +1180,19 @@
         }
 
         function openAdminPanel() {
+            document.getElementById('authScreen').classList.add('hide');
+            document.getElementById('dashboardScreen').classList.add('hide');
             document.getElementById('adminPanelModal').classList.remove('hide');
             renderAdminData();
         }
 
         function closeAdminPanel() {
             document.getElementById('adminPanelModal').classList.add('hide');
-            if(currentUser && currentUser.phone !== ADMIN_PHONE) showDashboard();
+            if(currentUser && currentUser.phone === ADMIN_PHONE) {
+                handleLogout();
+            } else if(currentUser) {
+                showDashboard();
+            }
         }
 
         function switchAdminTab(tab) {
@@ -1202,65 +1209,55 @@
         }
 
         function renderAdminData() {
-            // FIXED USERS RENDERING IN ADMIN PANEL
             let uHtml = "";
-            if(!db.users || db.users.length === 0) {
-                uHtml = '<p class="text-gray-400 text-xs">No registered users yet.</p>';
-            } else {
-                db.users.forEach((u, index) => {
-                    let uid = 153120 + index;
-                    let bankDetailsBox = u.bank ? `
-                        <div class="text-[10px] text-gray-300 space-y-0.5 mt-1 pt-1 border-t border-gray-700">
-                            <div>Name: <span class="text-yellow-400 font-bold">${u.bank.name}</span></div>
-                            <div>A/C No: <span class="text-emerald-400 font-bold">${u.bank.acc}</span></div>
-                            <div>IFSC: <span class="text-cyan-400 font-bold">${u.bank.ifsc}</span></div>
-                        </div>
-                    ` : '<div class="text-red-400 text-[10px] mt-1 pt-1 border-t border-gray-700">Bank details not added</div>';
+            db.users.forEach((u, index) => {
+                let uid = 153120 + index;
+                let bankDetailsBox = u.bank ? `
+                    <div class="text-[10px] text-gray-300 space-y-0.5 mt-1 pt-1 border-t border-gray-700">
+                        <div>Name: <span class="text-yellow-400 font-bold">${u.bank.name}</span></div>
+                        <div>A/C No: <span class="text-emerald-400 font-bold">${u.bank.acc}</span></div>
+                        <div>IFSC: <span class="text-cyan-400 font-bold">${u.bank.ifsc}</span></div>
+                    </div>
+                ` : '<div class="text-red-400 text-[10px] mt-1 pt-1 border-t border-gray-700">Bank details not added</div>';
 
-                    uHtml += `<div class="bg-gray-800 p-2.5 rounded space-y-1 text-xs">
-                        <div class="flex justify-between font-bold"><span>UID: ${uid}</span><span class="text-emerald-400">VIP ${u.vipLevel || 0} | Bal: ₹${u.balance || 0}</span></div>
-                        <div class="text-[10px] text-gray-300">Phone: ${u.phone} | ReferredBy: ${u.referredBy || 'None'}</div>
-                        ${bankDetailsBox}
-                    </div>`;
-                });
-            }
+                uHtml += `<div class="bg-gray-800 p-2.5 rounded space-y-1 text-xs">
+                    <div class="flex justify-between font-bold"><span>UID: ${uid}</span><span class="text-emerald-400">VIP ${u.vipLevel} | Bal: ₹${u.balance}</span></div>
+                    <div class="text-[10px] text-gray-300">Phone: ${u.phone} | ReferredBy: ${u.referredBy || 'None'}</div>
+                    ${bankDetailsBox}
+                </div>`;
+            });
             let adminUsersListEl = document.getElementById('adminUsersList');
-            if(adminUsersListEl) adminUsersListEl.innerHTML = uHtml;
+            if(adminUsersListEl) adminUsersListEl.innerHTML = uHtml || '<p class="text-gray-400">No users.</p>';
 
-            // FIXED DEPOSITS RENDERING IN ADMIN PANEL
             let dHtml = "";
-            if(!db.deposits || db.deposits.length === 0) {
-                dHtml = '<p class="text-gray-400 text-xs">No deposit records yet.</p>';
-            } else {
-                db.deposits.forEach(d => {
-                    let matchedUser = db.users.find(u => u.phone === d.phone);
-                    let userUid = matchedUser ? (153120 + db.users.indexOf(matchedUser)) : 'N/A';
-                    let userName = matchedUser ? `User_${d.phone.slice(-4)}` : 'Unknown User';
-                    let bankDetails = (matchedUser && matchedUser.bank) ? `Name: ${matchedUser.bank.name} | A/C: ${matchedUser.bank.acc} | IFSC: ${matchedUser.bank.ifsc}` : 'No bank details added';
+            db.deposits.forEach(d => {
+                let matchedUser = db.users.find(u => u.phone === d.phone);
+                let userUid = matchedUser ? (153120 + db.users.indexOf(matchedUser)) : 'N/A';
+                let userName = matchedUser ? `User_${d.phone.slice(-4)}` : 'Unknown User';
+                let bankDetails = (matchedUser && matchedUser.bank) ? `Name: ${matchedUser.bank.name} | A/C: ${matchedUser.bank.acc} | IFSC: ${matchedUser.bank.ifsc}` : 'No bank details added';
 
-                    let actionBtns = d.status === 'Pending' ? `<button onclick="approveDeposit(${d.id})" class="bg-emerald-600 px-2 py-1 rounded text-[10px] font-bold mr-1">Approve</button><button onclick="rejectDeposit(${d.id})" class="bg-red-600 px-2 py-1 rounded text-[10px] font-bold">Reject</button>` : `<span class="font-bold">${d.status}</span>`;
-                    
-                    let safeScreenshotUrl = d.screenshotUrl || '';
-                    let screenshotPreview = safeScreenshotUrl ? `
-                        <div class="mt-2">
-                            <div class="text-[10px] text-gray-400 mb-1">Attached Screenshot (Click to Open):</div>
-                            <img src="${safeScreenshotUrl}" onclick="openImagePreview('${safeScreenshotUrl}')" class="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer hover:opacity-90 transition">
-                        </div>
-                    ` : `<div class="text-yellow-400 text-[11px] mt-1">Screenshot File: ${d.screenshot || 'Not attached'}</div>`;
+                let actionBtns = d.status === 'Pending' ? `<button onclick="approveDeposit(${d.id})" class="bg-emerald-600 px-2 py-1 rounded text-[10px] font-bold mr-1">Approve</button><button onclick="rejectDeposit(${d.id})" class="bg-red-600 px-2 py-1 rounded text-[10px] font-bold">Reject</button>` : `<span class="font-bold">${d.status}</span>`;
+                
+                let safeScreenshotUrl = d.screenshotUrl || '';
+                let screenshotPreview = safeScreenshotUrl ? `
+                    <div class="mt-2">
+                        <div class="text-[10px] text-gray-400 mb-1">Attached Screenshot (Click to Open):</div>
+                        <img src="${safeScreenshotUrl}" onclick="openImagePreview('${safeScreenshotUrl}')" class="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer hover:opacity-90 transition">
+                    </div>
+                ` : `<div class="text-yellow-400 text-[11px] mt-1">Screenshot File: ${d.screenshot || 'Not attached'}</div>`;
 
-                    dHtml += `<div class="bg-gray-800 p-3 rounded-xl space-y-1.5 text-xs">
-                        <div class="flex justify-between font-bold text-emerald-400"><span>Name: ${userName} (UID: ${userUid})</span><span>₹${d.amount}</span></div>
-                        <div class="text-gray-300">Mobile: ${d.phone}</div>
-                        <div class="text-gray-300 text-[11px]">Bank Info: <span class="text-yellow-400 font-bold">${bankDetails}</span></div>
-                        <div class="text-gray-300">UTR / Transaction ID: <span class="text-emerald-400 font-mono font-bold">${d.utr}</span></div>
-                        ${screenshotPreview}
-                        <div class="text-[10px] text-gray-400 pt-1">Date: ${d.date}</div>
-                        <div class="pt-1 text-right">${actionBtns}</div>
-                    </div>`;
-                });
-            }
+                dHtml += `<div class="bg-gray-800 p-3 rounded-xl space-y-1.5 text-xs">
+                    <div class="flex justify-between font-bold text-emerald-400"><span>Name: ${userName} (UID: ${userUid})</span><span>₹${d.amount}</span></div>
+                    <div class="text-gray-300">Mobile: ${d.phone}</div>
+                    <div class="text-gray-300 text-[11px]">Bank Info: <span class="text-yellow-400 font-bold">${bankDetails}</span></div>
+                    <div class="text-gray-300">UTR / Transaction ID: <span class="text-emerald-400 font-mono font-bold">${d.utr}</span></div>
+                    ${screenshotPreview}
+                    <div class="text-[10px] text-gray-400 pt-1">Date: ${d.date}</div>
+                    <div class="pt-1 text-right">${actionBtns}</div>
+                </div>`;
+            });
             let adminDepositsListEl = document.getElementById('adminDepositsList');
-            if(adminDepositsListEl) adminDepositsListEl.innerHTML = dHtml;
+            if(adminDepositsListEl) adminDepositsListEl.innerHTML = dHtml || '<p class="text-gray-400">No pending deposits.</p>';
 
             let wHtml = "";
             db.withdraws.forEach(w => {
@@ -1401,7 +1398,7 @@
                 if(u) { 
                     u.balance += wd.amount; 
                     u.withdrawBal += wd.amount; 
-                    u.lastWithdrawData = null;
+                    u.lastWithdrawDate = null;
                 }
                 saveDB();
                 renderAdminData();
