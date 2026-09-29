@@ -590,7 +590,7 @@
         let signupRefBy = null;
         let currentInvestSubTab = "VIP 1";
 
-        // Real-time Database Sync Listener
+        // Real-time Sync with Firebase Database
         rtdb.ref('/').on('value', (snapshot) => {
             const serverData = snapshot.val();
             if(serverData) {
@@ -873,12 +873,16 @@
             document.getElementById('teamTotalCount').innerText = totalCount;
 
             let tierName = "Team A (4%)";
+            let commissionRate = 0.04;
             if(totalCount >= 150 && totalCount < 1500) {
                 tierName = "Team C (1%)";
+                commissionRate = 0.01;
             } else if(totalCount >= 25 && totalCount < 150) {
                 tierName = "Team B (2%)";
+                commissionRate = 0.02;
             } else if(totalCount >= 1500) {
                 tierName = "Team C (Max 1%)";
+                commissionRate = 0.01;
             }
             document.getElementById('teamCurrentTier').innerText = tierName;
 
