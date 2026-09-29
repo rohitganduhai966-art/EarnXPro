@@ -1,3165 +1,1080 @@
-<script>
-/* ============================================================
-   EARNX PRO - DATABASE PERSISTENCE FIX
-   UI remains unchanged.
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EarnX Pro</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        .hide { display: none !important; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800">
 
-   IMPORTANT:
-   - Do NOT write the complete Firebase root from one client.
-   - Each record is stored under its own Firebase child.
-   - Existing array-style data can still be read.
-   ============================================================ */
+    <!-- Auth Screen -->
+    <div id="authScreen" class="max-w-md mx-auto p-4 mt-10 bg-white rounded-xl shadow-md">
+        <h1 class="text-2xl font-bold text-center text-emerald-600 mb-6">EarnX Pro</h1>
+        
+        <!-- Tabs -->
+        <div class="flex bg-gray-100 p-1 rounded-lg mb-6">
+            <button id="loginTabBtn" onclick="switchAuthTab('login')" class="flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition">Login</button>
+            <button id="signupTabBtn" onclick="switchAuthTab('signup')" class="flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition">Sign Up</button>
+        </div>
 
-const firebaseConfig = {
-    databaseURL: "https://earnx-pro-default-rtdb.firebaseio.com/"
-};
+        <!-- Login Form -->
+        <div id="loginFormContainer" class="space-y-4">
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Mobile Number</label>
+                <input type="text" id="loginPhone" placeholder="Enter mobile number" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Password</label>
+                <input type="password" id="loginPassword" placeholder="Enter password" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+            </div>
+            <button onclick="handleLogin()" class="w-full py-2.5 bg-emerald-600 text-white rounded-lg font-semibold text-sm hover:bg-emerald-700 transition">Login</button>
+            <div class="text-right">
+                <button onclick="showForgotPasswordModal()" class="text-xs text-emerald-600 font-semibold hover:underline">Forgot Password?</button>
+            </div>
+        </div>
 
-firebase.initializeApp(firebaseConfig);
-const rtdb = firebase.database();
+        <!-- Signup Form -->
+        <div id="signupFormContainer" class="space-y-4 hide">
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Mobile Number</label>
+                <div class="flex gap-2">
+                    <input type="text" id="signupPhone" placeholder="Enter mobile number" class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+                    <button onclick="sendSignupOTP()" class="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold">Send OTP</button>
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">OTP</label>
+                <input type="text" id="signupOtp" placeholder="Enter OTP (1234)" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Password</label>
+                <input type="password" id="signupPassword" placeholder="Create password" class="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+            </div>
+            <div class="text-xs text-gray-500 hide" id="signupRefContainer">Referred by: <span id="signupRefDisplay" class="font-semibold text-gray-700">None</span></div>
+            <button onclick="handleSignup()" class="w-full py-2.5 bg-emerald-600 text-white rounded-lg font-semibold text-sm hover:bg-emerald-700 transition">Register</button>
+        </div>
+    </div>
 
-const ADMIN_PHONE = "7071088675";
-const ADMIN_PASS = "Faraz78678678690786";
+    <!-- Dashboard Screen -->
+    <div id="dashboardScreen" class="max-w-md mx-auto pb-20 hide">
+        <!-- Header -->
+        <div class="bg-emerald-600 text-white p-4 flex justify-between items-center shadow">
+            <div>
+                <div id="headerUsername" class="font-bold text-lg">User</div>
+                <div class="text-xs text-emerald-100">UID: <span id="headerUserId">N/A</span></div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="userVipBadge" class="bg-emerald-700 text-xs px-2 py-1 rounded font-bold">VIP 0</span>
+                <button onclick="handleLogout()" class="text-xs bg-red-500 px-2.5 py-1 rounded font-semibold">Logout</button>
+            </div>
+        </div>
 
-const ROTATING_UPIS = [
-    "7071088675@mbk",
-    "7071088675@mbkns",
-    "7071088675-3@ybl",
-    "rubeena.rashid@ptyes",
-    "6377833820-2.wallet@phonepe",
-    "rohit.m820@ptaxis"
-];
+        <!-- Balance Card -->
+        <div class="p-4">
+            <div class="bg-gradient-to-r from-emerald-500 to-teal-600 text-white p-4 rounded-xl shadow-md">
+                <div class="text-xs text-emerald-100">Total Balance</div>
+                <div class="text-2xl font-bold mt-1">₹<span id="userBalanceDisplay">0.00</span></div>
+                <div class="flex justify-between mt-4 pt-3 border-t border-emerald-400/40 text-xs">
+                    <div>Recharge Bal: <span id="userRechargeBal" class="font-bold">₹0.00</span></div>
+                    <div>Withdraw Bal: <span id="userWithdrawBal" class="font-bold">₹0.00</span></div>
+                </div>
+            </div>
+        </div>
 
-let db = {
-    users: [],
-    deposits: [],
-    withdraws: [],
-    products: [],
-    investments: [],
-    teamCommissions: []
-};
+        <!-- Views container -->
+        <div class="px-4">
+            <!-- Home View -->
+            <div id="viewHome" class="space-y-4">
+                <div class="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">
+                    <div>
+                        <div class="font-bold text-sm">Daily Sign-In</div>
+                        <div class="text-xs text-gray-400">Claim daily bonus reward</div>
+                    </div>
+                    <button onclick="claimDailySignin()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-semibold rounded-lg">Check In</button>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm">
+                    <div class="font-bold text-sm mb-2">Invite Friends</div>
+                    <div class="flex gap-2">
+                        <input type="text" id="userUniqueInviteLink" readonly class="flex-1 bg-gray-50 border rounded px-2 py-1 text-xs text-gray-600">
+                        <button onclick="copyUniqueInviteLink()" class="px-3 py-1 bg-emerald-600 text-white text-xs rounded font-semibold">Copy</button>
+                    </div>
+                </div>
+            </div>
 
-let currentUser =
-    JSON.parse(localStorage.getItem("earnx_current_user")) || null;
+            <!-- Invest View -->
+            <div id="viewInvest" class="space-y-4 hide">
+                <div class="flex bg-white p-1 rounded-lg shadow-sm">
+                    <button id="invSubTab1" onclick="switchInvestSubTab('VIP 1')" class="flex-1 py-2 rounded bg-emerald-600 text-white transition text-center text-xs font-semibold">VIP 1</button>
+                    <button id="invSubTab2" onclick="switchInvestSubTab('VIP 2')" class="flex-1 py-2 rounded text-gray-600 transition text-center text-xs font-semibold">VIP 2</button>
+                    <button id="invSubTab3" onclick="switchInvestSubTab('BENEFITS')" class="flex-1 py-2 rounded text-gray-600 transition text-center text-xs font-semibold">Benefits</button>
+                </div>
+                <div id="productListContainer" class="space-y-3"></div>
+            </div>
 
-let activeTimerInterval = null;
-let signupRefBy = null;
-let currentInvestSubTab = "VIP 1";
-let firebaseLoaded = false;
+            <!-- Team View -->
+            <div id="viewTeam" class="space-y-4 hide">
+                <div class="bg-white p-4 rounded-xl shadow-sm grid grid-cols-2 gap-4 text-center">
+                    <div>
+                        <div class="text-xs text-gray-400">Total Team</div>
+                        <div id="teamTotalCount" class="text-xl font-bold text-emerald-600">0</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-400">Current Tier</div>
+                        <div id="teamCurrentTier" class="text-sm font-bold text-gray-800 mt-1">Team A (4%)</div>
+                    </div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm space-y-2">
+                    <div class="font-bold text-sm mb-2">Team Commissions</div>
+                    <div id="teamMembersList" class="space-y-2"></div>
+                </div>
+            </div>
 
+            <!-- Account View -->
+            <div id="viewAccount" class="space-y-4 hide">
+                <div class="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                    <div class="font-bold text-sm">Recharge History</div>
+                    <div id="userRechargeHistory" class="space-y-2"></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                    <div class="font-bold text-sm">Withdrawal History</div>
+                    <div id="userWithdrawHistory" class="space-y-2"></div>
+                </div>
+            </div>
 
-/* ============================================================
-   HELPERS
-   ============================================================ */
+            <!-- Recharge View -->
+            <div id="viewRecharge" class="space-y-4 hide">
+                <div class="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                    <div class="font-bold text-sm">Recharge Amount</div>
+                    <input type="number" id="rechargeInputAmount" placeholder="Enter amount (₹100 - ₹1,00,000)" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="setRechargeAmount(500)" class="py-1.5 border rounded text-xs font-semibold">₹500</button>
+                        <button onclick="setRechargeAmount(1000)" class="py-1.5 border rounded text-xs font-semibold">₹1000</button>
+                        <button onclick="setRechargeAmount(5000)" class="py-1.5 border rounded text-xs font-semibold">₹5000</button>
+                    </div>
+                    <button onclick="proceedToPaymentGateway()" class="w-full py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Proceed to Pay</button>
+                </div>
+            </div>
 
-function makeId(prefix = "EX") {
-    return prefix + Date.now().toString(36) + Math.random()
-        .toString(36)
-        .substring(2, 8);
-}
+            <!-- Withdraw View -->
+            <div id="viewWithdraw" class="space-y-4 hide">
+                <div id="bankDetailsCard" class="bg-white p-4 rounded-xl shadow-sm space-y-3">
+                    <div class="font-bold text-sm">Add Bank Details</div>
+                    <input type="text" id="bankHolderName" placeholder="Account Holder Name" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <input type="text" id="bankAccNo" placeholder="Bank Account Number" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <input type="text" id="bankIfsc" placeholder="IFSC Code" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <button onclick="saveBankDetails()" class="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Save Bank Details</button>
+                </div>
+                <div id="withdrawFormCard" class="bg-white p-4 rounded-xl shadow-sm space-y-3 hide">
+                    <div class="font-bold text-sm">Withdraw Money</div>
+                    <div class="text-xs text-gray-500">Saved Bank: <span id="savedBankName" class="font-semibold text-gray-700"></span> (<span id="savedBankAcc"></span>) - <span id="savedBankIfsc"></span></div>
+                    <input type="number" id="withdrawInputAmount" placeholder="Enter withdraw amount" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <button id="submitWithdrawBtn" onclick="submitWithdrawRequest()" class="w-full py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Submit Withdrawal</button>
+                    <div id="withdrawLimitMsg" class="text-center text-xs text-red-500 hide font-semibold">Daily withdrawal limit reached.</div>
+                </div>
+            </div>
+        </div>
 
-function collectionToArray(value) {
-    if (!value) return [];
+        <!-- Bottom Navigation Bar -->
+        <div class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t flex justify-around py-2 shadow-lg">
+            <button id="navHomeBtn" onclick="switchTab('home')" class="flex flex-col items-center text-emerald-600 font-semibold text-xs">
+                <span>Home</span>
+            </button>
+            <button id="navInvestBtn" onclick="switchTab('invest')" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
+                <span>Invest</span>
+            </button>
+            <button id="navTeamBtn" onclick="switchTab('team')" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
+                <span>Team</span>
+            </button>
+            <button id="navAccountBtn" onclick="switchTab('account')" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
+                <span>Account</span>
+            </button>
+            <button onclick="switchTab('recharge')" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
+                <span>Recharge</span>
+            </button>
+            <button onclick="switchTab('withdraw')" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
+                <span>Withdraw</span>
+            </button>
+        </div>
+    </div>
 
-    if (Array.isArray(value)) {
-        return value.filter(Boolean);
-    }
+    <!-- Payment Modal -->
+    <div id="paymentModal" class="fixed inset-0 bg-black/60 flex items-center justify-center p-4 hide z-50">
+        <div class="bg-white rounded-xl p-4 max-w-sm w-full space-y-3">
+            <div class="flex justify-between items-center font-bold">
+                <span>Complete Payment</span>
+                <span id="paymentTimer" class="text-red-500 text-xs">12:00</span>
+            </div>
+            <div class="text-xs text-gray-600">Send money to UPI: <strong id="assignedUpiText" class="text-emerald-600"></strong></div>
+            <div class="grid grid-cols-2 gap-2">
+                <a id="paytmAppBtn" href="#" class="py-2 bg-blue-50 text-blue-600 text-center rounded text-xs font-semibold">PayTM</a>
+                <a id="phonepeAppBtn" href="#" class="py-2 bg-purple-50 text-purple-600 text-center rounded text-xs font-semibold">PhonePe</a>
+                <a id="gpayAppBtn" href="#" class="py-2 bg-green-50 text-green-600 text-center rounded text-xs font-semibold">Google Pay</a>
+                <a id="mobikwikAppBtn" href="#" class="py-2 bg-orange-50 text-orange-600 text-center rounded text-xs font-semibold">MobiKwik</a>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Enter 12-digit UTR</label>
+                <input type="text" id="paymentUtrInput" placeholder="UTR / Transaction ID" class="w-full px-3 py-2 border rounded-lg text-sm">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Upload Screenshot</label>
+                <input type="file" id="paymentScreenshotInput" accept="image/*" class="w-full text-xs text-gray-500">
+            </div>
+            <div class="flex gap-2 pt-2">
+                <button onclick="submitPaymentProof()" class="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Submit Proof</button>
+                <button onclick="closePaymentModal()" class="px-3 py-2 bg-gray-200 rounded-lg text-xs font-semibold">Cancel</button>
+            </div>
+        </div>
+    </div>
 
-    if (typeof value === "object") {
-        return Object.entries(value).map(([key, value]) => {
-            if (value && typeof value === "object" && !value._firebaseKey) {
-                value._firebaseKey = key;
-            }
-            return value;
-        }).filter(Boolean);
-    }
+    <!-- VIP Status Modal -->
+    <div id="vipStatusModal" class="fixed inset-0 bg-black/60 flex items-center justify-center p-4 hide z-50">
+        <div class="bg-white rounded-xl p-4 max-w-sm w-full space-y-3">
+            <div class="font-bold text-sm">VIP Status</div>
+            <div class="text-xs">Current VIP: <span id="modalCurrentVipBadge" class="font-semibold text-emerald-600">VIP 0</span></div>
+            <button onclick="closeVipModal()" class="w-full py-2 bg-gray-200 rounded-lg text-xs font-semibold">Close</button>
+        </div>
+    </div>
 
-    return [];
-}
+    <!-- Forgot Password Modal -->
+    <div id="forgotPasswordModal" class="fixed inset-0 bg-black/60 flex items-center justify-center p-4 hide z-50">
+        <div class="bg-white rounded-xl p-4 max-w-sm w-full space-y-3">
+            <div class="font-bold text-sm">Reset Password</div>
+            <input type="text" id="forgotPhone" placeholder="Mobile Number" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <div class="flex gap-2">
+                <input type="text" id="forgotOtp" placeholder="OTP (9876)" class="flex-1 px-3 py-2 border rounded-lg text-sm">
+                <button onclick="sendForgotOTP()" class="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold">Send OTP</button>
+            </div>
+            <input type="password" id="forgotNewPassword" placeholder="New Password" class="w-full px-3 py-2 border rounded-lg text-sm">
+            <div class="flex gap-2">
+                <button onclick="executePasswordReset()" class="flex-1 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Update</button>
+                <button onclick="document.getElementById('forgotPasswordModal').classList.add('hide')" class="px-3 py-2 bg-gray-200 rounded-lg text-xs font-semibold">Cancel</button>
+            </div>
+        </div>
+    </div>
 
-function money(value) {
-    return Number(value || 0);
-}
+    <!-- Admin Panel Modal -->
+    <div id="adminPanelModal" class="fixed inset-0 bg-gray-900 p-4 hide z-50 overflow-y-auto text-white">
+        <div class="max-w-md mx-auto space-y-4 pb-10">
+            <div class="flex justify-between items-center border-b border-gray-700 pb-3">
+                <div class="font-bold text-lg text-emerald-400">Admin Panel</div>
+                <button onclick="closeAdminPanel()" class="px-3 py-1 bg-red-600 rounded text-xs font-semibold">Close</button>
+            </div>
 
-function escapeHtml(value) {
-    return String(value ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-}
+            <!-- Admin Tabs -->
+            <div class="grid grid-cols-4 gap-1 text-center text-xs font-semibold">
+                <button id="admTabUsers" onclick="switchAdminTab('users')" class="py-2 bg-emerald-600 rounded">Users</button>
+                <button id="admTabDep" onclick="switchAdminTab('deposits')" class="py-2 rounded">Deposits</button>
+                <button id="admTabWd" onclick="switchAdminTab('withdraws')" class="py-2 rounded">Withdraws</button>
+                <button id="admTabProd" onclick="switchAdminTab('products')" class="py-2 rounded">Products</button>
+            </div>
 
-function getUserByPhone(phone) {
-    return db.users.find(u => u && u.phone === phone) || null;
-}
+            <!-- Admin Section Users -->
+            <div id="adminSectionUsers" class="space-y-2">
+                <div id="adminUsersList" class="space-y-2"></div>
+            </div>
 
-function getUserKey(user) {
-    if (!user) return null;
+            <!-- Admin Section Deposits -->
+            <div id="adminSectionDeposits" class="space-y-2 hide">
+                <div id="adminDepositsList" class="space-y-2"></div>
+            </div>
 
-    if (user.uid) return user.uid;
-    if (user._firebaseKey && !/^\d+$/.test(user._firebaseKey)) {
-        return user._firebaseKey;
-    }
+            <!-- Admin Section Withdraws -->
+            <div id="adminSectionWithdraws" class="space-y-2 hide">
+                <div id="adminWithdrawsList" class="space-y-2"></div>
+            </div>
 
-    return null;
-}
+            <!-- Admin Section Products -->
+            <div id="adminSectionProducts" class="space-y-3 hide">
+                <div class="bg-gray-800 p-3 rounded space-y-2 text-xs">
+                    <div class="font-bold">Add New Product</div>
+                    <input type="text" id="newProdName" placeholder="Product Name" class="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded">
+                    <input type="number" id="newProdPrice" placeholder="Price" class="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded">
+                    <input type="number" id="newProdDaily" placeholder="Daily Return" class="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded">
+                    <select id="newProdCategory" class="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded">
+                        <option value="VIP 1">VIP 1</option>
+                        <option value="VIP 2">VIP 2</option>
+                        <option value="BENEFITS">Benefits</option>
+                    </select>
+                    <input type="text" id="newProdImage" placeholder="Image URL" class="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 rounded">
+                    <button onclick="adminAddProduct()" class="w-full py-2 bg-emerald-600 font-bold rounded">Publish Product</button>
+                </div>
+                <div id="adminProductsList" class="space-y-2"></div>
+            </div>
+        </div>
+    </div>
 
+    <!-- Image Preview Modal -->
+    <div id="imagePreviewModal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 hide z-50" onclick="closeImagePreview()">
+        <img id="previewModalImg" class="max-w-full max-h-full rounded shadow-lg">
+    </div>
 
-/* ============================================================
-   DATABASE WRITE HELPERS
-   ============================================================ */
-
-/*
- * IMPORTANT:
- * These functions write ONLY the requested child.
- * They never overwrite the Firebase root.
- */
-
-function saveUser(user) {
-    if (!user || !user.phone) {
-        return Promise.reject(new Error("Invalid user"));
-    }
-
-    if (!user.uid) {
-        user.uid = makeId("UID");
-    }
-
-    return rtdb.ref("users/" + user.uid)
-        .set(user)
-        .then(() => {
-            localStorage.setItem(
-                "earnx_current_user",
-                JSON.stringify(user)
-            );
-        })
-        .catch(error => {
-            console.error("User save failed:", error);
-            alert("Could not save user data. Please try again.");
-            throw error;
-        });
-}
-
-function saveRecord(collection, recordId, data) {
-    if (!collection || !recordId || !data) {
-        return Promise.reject(new Error("Invalid record"));
-    }
-
-    return rtdb.ref(collection + "/" + recordId)
-        .set(data)
-        .catch(error => {
-            console.error("Database write failed:", error);
-            alert("Database save failed. Please try again.");
-            throw error;
-        });
-}
-
-function updateRecord(collection, recordId, updates) {
-    return rtdb.ref(collection + "/" + recordId)
-        .update(updates)
-        .catch(error => {
-            console.error("Database update failed:", error);
-            alert("Database update failed. Please try again.");
-            throw error;
-        });
-}
-
-function deleteRecord(collection, recordId) {
-    return rtdb.ref(collection + "/" + recordId)
-        .remove()
-        .catch(error => {
-            console.error("Database delete failed:", error);
-            alert("Database delete failed. Please try again.");
-            throw error;
-        });
-}
-
-
-/* ============================================================
-   FIREBASE REALTIME SYNC
-   ============================================================ */
-
-/*
- * We listen to the individual collections instead of the whole
- * database root. This reduces stale-root overwrite problems.
- */
-
-rtdb.ref("users").on("value", snapshot => {
-    db.users = collectionToArray(snapshot.val());
-
-    /*
-     * Remove accidental duplicate users by phone.
-     * The newest/UID-based record is preferred.
-     */
-    const seen = new Set();
-
-    db.users = db.users.filter(user => {
-        if (!user || !user.phone) return false;
-
-        if (seen.has(user.phone)) return false;
-
-        seen.add(user.phone);
-        return true;
-    });
-
-    syncCurrentUser();
-    firebaseLoaded = true;
-});
-
-rtdb.ref("deposits").on("value", snapshot => {
-    db.deposits = collectionToArray(snapshot.val());
-    syncCurrentUser();
-});
-
-rtdb.ref("withdraws").on("value", snapshot => {
-    db.withdraws = collectionToArray(snapshot.val());
-    syncCurrentUser();
-});
-
-rtdb.ref("products").on("value", snapshot => {
-    db.products = collectionToArray(snapshot.val());
-    renderProductsSafely();
-    renderAdminSafely();
-});
-
-rtdb.ref("investments").on("value", snapshot => {
-    db.investments = collectionToArray(snapshot.val());
-    syncCurrentUser();
-});
-
-rtdb.ref("teamCommissions").on("value", snapshot => {
-    db.teamCommissions = collectionToArray(snapshot.val());
-    syncCurrentUser();
-});
-
-
-function syncCurrentUser() {
-    if (!currentUser || currentUser.phone === ADMIN_PHONE) {
-        renderAdminSafely();
-        return;
-    }
-
-    const updated = getUserByPhone(currentUser.phone);
-
-    if (updated) {
-        currentUser = {
-            ...currentUser,
-            ...updated
+    <!-- Your Original JavaScript Logic -->
+    <script>
+        const firebaseConfig = {
+            databaseURL: "https://earnx-pro-default-rtdb.firebaseio.com/"
         };
 
-        localStorage.setItem(
-            "earnx_current_user",
-            JSON.stringify(currentUser)
-        );
+        firebase.initializeApp(firebaseConfig);
+        const rtdb = firebase.database();
 
-        const dashboard = document.getElementById("dashboardScreen");
+        const ADMIN_PHONE = "7071088675";
+        const ADMIN_PASS = "Faraz78678678690786";
 
-        if (
-            dashboard &&
-            !dashboard.classList.contains("hide")
-        ) {
+        const ROTATING_UPIS = [
+            "7071088675@mbk",
+            "7071088675@mbkns",
+            "7071088675-3@ybl",
+            "rubeena.rashid@ptyes",
+            "6377833820-2.wallet@phonepe",
+            "rohit.m820@ptaxis"
+        ];
+
+        let db = {
+            users: [],
+            deposits: [],
+            withdraws: [],
+            products: [],
+            investments: [],
+            teamCommissions: []
+        };
+
+        let currentUser = JSON.parse(localStorage.getItem("earnx_current_user")) || null;
+        let activeTimerInterval = null;
+        let signupRefBy = null;
+        let currentInvestSubTab = "VIP 1";
+        let firebaseLoaded = false;
+
+        function makeId(prefix = "EX") {
+            return prefix + Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+        }
+
+        function collectionToArray(value) {
+            if (!value) return [];
+            if (Array.isArray(value)) return value.filter(Boolean);
+            if (typeof value === "object") {
+                return Object.entries(value).map(([key, value]) => {
+                    if (value && typeof value === "object" && !value._firebaseKey) {
+                        value._firebaseKey = key;
+                    }
+                    return value;
+                }).filter(Boolean);
+            }
+            return [];
+        }
+
+        function money(value) { return Number(value || 0); }
+
+        function escapeHtml(value) {
+            return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function getUserByPhone(phone) {
+            return db.users.find(u => u && u.phone === phone) || null;
+        }
+
+        function saveUser(user) {
+            if (!user || !user.phone) return Promise.reject(new Error("Invalid user"));
+            if (!user.uid) user.uid = makeId("UID");
+            return rtdb.ref("users/" + user.uid).set(user).then(() => {
+                localStorage.setItem("earnx_current_user", JSON.stringify(user));
+            }).catch(error => {
+                console.error("User save failed:", error);
+                throw error;
+            });
+        }
+
+        function saveRecord(collection, recordId, data) {
+            if (!collection || !recordId || !data) return Promise.reject(new Error("Invalid record"));
+            return rtdb.ref(collection + "/" + recordId).set(data).catch(error => {
+                console.error("Database write failed:", error);
+                throw error;
+            });
+        }
+
+        function updateRecord(collection, recordId, updates) {
+            return rtdb.ref(collection + "/" + recordId).update(updates).catch(error => {
+                console.error("Database update failed:", error);
+                throw error;
+            });
+        }
+
+        function deleteRecord(collection, recordId) {
+            return rtdb.ref(collection + "/" + recordId).remove().catch(error => {
+                console.error("Database delete failed:", error);
+                throw error;
+            });
+        }
+
+        rtdb.ref("users").on("value", snapshot => {
+            db.users = collectionToArray(snapshot.val());
+            const seen = new Set();
+            db.users = db.users.filter(user => {
+                if (!user || !user.phone) return false;
+                if (seen.has(user.phone)) return false;
+                seen.add(user.phone);
+                return true;
+            });
+            syncCurrentUser();
+            firebaseLoaded = true;
+        });
+
+        rtdb.ref("deposits").on("value", snapshot => {
+            db.deposits = collectionToArray(snapshot.val());
+            syncCurrentUser();
+        });
+
+        rtdb.ref("withdraws").on("value", snapshot => {
+            db.withdraws = collectionToArray(snapshot.val());
+            syncCurrentUser();
+        });
+
+        rtdb.ref("products").on("value", snapshot => {
+            db.products = collectionToArray(snapshot.val());
+            renderProductsSafely();
+            renderAdminSafely();
+        });
+
+        rtdb.ref("investments").on("value", snapshot => {
+            db.investments = collectionToArray(snapshot.val());
+            syncCurrentUser();
+        });
+
+        rtdb.ref("teamCommissions").on("value", snapshot => {
+            db.teamCommissions = collectionToArray(snapshot.val());
+            syncCurrentUser();
+        });
+
+        function syncCurrentUser() {
+            if (!currentUser || currentUser.phone === ADMIN_PHONE) {
+                renderAdminSafely();
+                return;
+            }
+            const updated = getUserByPhone(currentUser.phone);
+            if (updated) {
+                currentUser = { ...currentUser, ...updated };
+                localStorage.setItem("earnx_current_user", JSON.stringify(currentUser));
+                const dashboard = document.getElementById("dashboardScreen");
+                if (dashboard && !dashboard.classList.contains("hide")) {
+                    showDashboardDataOnly();
+                }
+            }
+        }
+
+        function renderProductsSafely() {
+            if (document.getElementById("productListContainer") && currentUser && currentUser.phone !== ADMIN_PHONE) {
+                renderProducts();
+            }
+        }
+
+        function renderAdminSafely() {
+            const admin = document.getElementById("adminPanelModal");
+            if (admin && !admin.classList.contains("hide") && currentUser && currentUser.phone === ADMIN_PHONE) {
+                renderAdminData();
+            }
+        }
+
+        window.onload = function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const refParam = urlParams.get("ref");
+            if (refParam) {
+                signupRefBy = refParam;
+                const refDisplay = document.getElementById("signupRefDisplay");
+                if (refDisplay) refDisplay.innerText = refParam;
+                document.getElementById("signupRefContainer").classList.remove("hide");
+                switchAuthTab("signup");
+            }
+            setTimeout(() => {
+                checkProductExpiries();
+                if (currentUser) {
+                    if (currentUser.phone === ADMIN_PHONE) {
+                        openAdminPanel();
+                    } else {
+                        showDashboard();
+                    }
+                }
+            }, 800);
+        };
+
+        function checkProductExpiries() {
+            if (!firebaseLoaded) return;
+            const now = Date.now();
+            const productExpiry = 24 * 60 * 60 * 1000;
+            db.products.forEach(product => {
+                if (!product.createdAt) return;
+                if (now - Number(product.createdAt) >= productExpiry) {
+                    const key = product._firebaseKey || product.id;
+                    if (key) deleteRecord("products", key).catch(() => {});
+                }
+            });
+            db.investments.forEach(inv => {
+                if (!inv || inv.matured) return;
+                if (inv.maturityTime && now >= Number(inv.maturityTime)) {
+                    markInvestmentMatured(inv);
+                }
+            });
+        }
+
+        function markInvestmentMatured(inv) {
+            if (!inv || inv.matured) return;
+            const investmentKey = inv._firebaseKey || inv.id;
+            if (!investmentKey) return;
+            const user = getUserByPhone(inv.phone);
+            if (!user) return;
+            const newBalance = money(user.balance) + money(inv.returnAmount);
+            const newWithdrawBalance = money(user.withdrawBal) + money(inv.returnAmount);
+            const updates = {};
+            updates["investments/" + investmentKey + "/matured"] = true;
+            updates["investments/" + investmentKey + "/maturedAt"] = Date.now();
+            updates["users/" + user.uid + "/balance"] = newBalance;
+            updates["users/" + user.uid + "/withdrawBal"] = newWithdrawBalance;
+            rtdb.ref().update(updates).catch(error => console.error(error));
+        }
+
+        function switchAuthTab(tab) {
+            if (tab === "login") {
+                document.getElementById("loginFormContainer").classList.remove("hide");
+                document.getElementById("signupFormContainer").classList.add("hide");
+                document.getElementById("loginTabBtn").className = "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition";
+                document.getElementById("signupTabBtn").className = "flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition";
+            } else {
+                document.getElementById("signupFormContainer").classList.remove("hide");
+                document.getElementById("loginFormContainer").classList.add("hide");
+                document.getElementById("signupTabBtn").className = "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition";
+                document.getElementById("loginTabBtn").className = "flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition";
+            }
+        }
+
+        function sendSignupOTP() {
+            let phone = document.getElementById("signupPhone").value.trim();
+            if (!phone || phone.length < 10) {
+                alert("Please enter a valid phone number");
+                return;
+            }
+            if (getUserByPhone(phone)) {
+                alert("This mobile number is already registered!");
+                return;
+            }
+            alert("OTP sent successfully: 1234");
+            document.getElementById("signupOtp").value = "1234";
+        }
+
+        async function handleSignup() {
+            let phone = document.getElementById("signupPhone").value.trim();
+            let otp = document.getElementById("signupOtp").value.trim();
+            let password = document.getElementById("signupPassword").value;
+            if (!phone || !otp || !password) {
+                alert("All fields are required");
+                return;
+            }
+            if (otp !== "1234") {
+                alert("Invalid OTP");
+                return;
+            }
+            if (getUserByPhone(phone)) {
+                alert("Number already registered!");
+                return;
+            }
+            const uid = makeId("UID");
+            const newUser = {
+                uid: uid,
+                name: "User_" + phone.slice(-4),
+                phone: phone,
+                password: password,
+                balance: 0,
+                rechargeBal: 0,
+                withdrawBal: 0,
+                vipLevel: 0,
+                bank: null,
+                lastWithdrawDate: null,
+                lastSigninDate: null,
+                referredBy: signupRefBy || null,
+                createdAt: Date.now()
+            };
+            try {
+                await saveUser(newUser);
+                currentUser = newUser;
+                localStorage.setItem("earnx_current_user", JSON.stringify(newUser));
+                alert("Signup successful! Please login.");
+                switchAuthTab("login");
+            } catch (error) { console.error(error); }
+        }
+
+        function handleLogin() {
+            let phone = document.getElementById("loginPhone").value.trim();
+            let password = document.getElementById("loginPassword").value;
+            if (phone === ADMIN_PHONE && password === ADMIN_PASS) {
+                currentUser = { phone: ADMIN_PHONE, name: "System Control", vipLevel: "SYSTEM" };
+                openAdminPanel();
+                return;
+            }
+            let user = db.users.find(u => u.phone === phone && u.password === password);
+            if (!user) {
+                alert("Invalid mobile number or password");
+                return;
+            }
+            currentUser = user;
+            if (currentUser.lastSigninDate === undefined) currentUser.lastSigninDate = null;
+            localStorage.setItem("earnx_current_user", JSON.stringify(currentUser));
+            showDashboard();
+        }
+
+        function handleLogout() {
+            currentUser = null;
+            localStorage.removeItem("earnx_current_user");
+            document.getElementById("dashboardScreen").classList.add("hide");
+            document.getElementById("authScreen").classList.remove("hide");
+            document.getElementById("adminPanelModal").classList.add("hide");
+        }
+
+        function showDashboard() {
+            checkProductExpiries();
+            document.getElementById("authScreen").classList.add("hide");
+            document.getElementById("dashboardScreen").classList.remove("hide");
             showDashboardDataOnly();
         }
-    }
-}
 
-function renderProductsSafely() {
-    if (
-        document.getElementById("productListContainer") &&
-        currentUser &&
-        currentUser.phone !== ADMIN_PHONE
-    ) {
-        renderProducts();
-    }
-}
-
-function renderAdminSafely() {
-    const admin = document.getElementById("adminPanelModal");
-
-    if (
-        admin &&
-        !admin.classList.contains("hide") &&
-        currentUser &&
-        currentUser.phone === ADMIN_PHONE
-    ) {
-        renderAdminData();
-    }
-}
-
-
-/* ============================================================
-   OLD saveDB() BLOCKED
-   ============================================================ */
-
-/*
- * The old code used:
- *
- *     rtdb.ref('/').set(db)
- *
- * That is the main disappearing-data problem.
- *
- * We intentionally do NOT write the root anymore.
- */
-
-function saveDB() {
-    console.warn(
-        "saveDB() is disabled. Use saveUser/saveRecord/updateRecord instead."
-    );
-
-    return Promise.resolve();
-}
-
-
-/* ============================================================
-   PAGE LOAD
-   ============================================================ */
-
-window.onload = function() {
-
-    const urlParams =
-        new URLSearchParams(window.location.search);
-
-    const refParam = urlParams.get("ref");
-
-    if (refParam) {
-        signupRefBy = refParam;
-
-        const refDisplay =
-            document.getElementById("signupRefDisplay");
-
-        if (refDisplay) {
-            refDisplay.innerText = refParam;
-        }
-
-        switchAuthTab("signup");
-    }
-
-    /*
-     * Do not run database-changing expiry code before Firebase
-     * has loaded the current data.
-     */
-    setTimeout(() => {
-        checkProductExpiries();
-
-        if (currentUser) {
-            if (currentUser.phone === ADMIN_PHONE) {
-                openAdminPanel();
-            } else {
-                showDashboard();
+        function showDashboardDataOnly() {
+            if (!currentUser) return;
+            document.getElementById("headerUsername").innerText = currentUser.name || "User_" + currentUser.phone.slice(-4);
+            document.getElementById("headerUserId").innerText = currentUser.uid || "N/A";
+            document.getElementById("userBalanceDisplay").innerText = money(currentUser.balance).toFixed(2);
+            document.getElementById("userRechargeBal").innerText = "₹" + money(currentUser.rechargeBal).toFixed(2);
+            document.getElementById("userWithdrawBal").innerText = "₹" + money(currentUser.withdrawBal).toFixed(2);
+            let vipBadgeText = currentUser.vipLevel > 0 ? "VIP " + currentUser.vipLevel : "VIP 0";
+            document.getElementById("userVipBadge").innerText = vipBadgeText;
+            if (document.getElementById("modalCurrentVipBadge")) {
+                document.getElementById("modalCurrentVipBadge").innerText = vipBadgeText;
             }
-        }
-    }, 800);
-};
-
-
-/* ============================================================
-   VIP
-   ============================================================ */
-
-function calculateVipLevel(amount) {
-
-    amount = money(amount);
-
-    if (amount >= 100000) return 10;
-    if (amount >= 45000) return 9;
-    if (amount >= 35000) return 8;
-    if (amount >= 25000) return 7;
-    if (amount >= 15000) return 6;
-    if (amount >= 10000) return 5;
-    if (amount >= 5600) return 4;
-    if (amount >= 3500) return 3;
-    if (amount >= 1500) return 2;
-    if (amount >= 200) return 1;
-
-    return 0;
-}
-
-
-/* ============================================================
-   PRODUCT / INVESTMENT EXPIRY
-   ============================================================ */
-
-function checkProductExpiries() {
-
-    if (!firebaseLoaded) return;
-
-    const now = Date.now();
-    const productExpiry = 24 * 60 * 60 * 1000;
-
-    /*
-     * Product expiry only removes the product OFFER.
-     * It does not delete investments.
-     */
-
-    db.products.forEach(product => {
-
-        if (!product.createdAt) return;
-
-        if (
-            now - Number(product.createdAt) >=
-            productExpiry
-        ) {
-
-            const key =
-                product._firebaseKey ||
-                product.id;
-
-            if (key) {
-                deleteRecord("products", key)
-                    .catch(() => {});
-            }
-        }
-    });
-
-    /*
-     * Investment maturity is checked locally.
-     *
-     * For a real financial application, this should be moved to
-     * trusted server-side code/Cloud Functions because a browser
-     * cannot be trusted to credit balances.
-     */
-
-    db.investments.forEach(inv => {
-
-        if (!inv || inv.matured) return;
-
-        if (
-            inv.maturityTime &&
-            now >= Number(inv.maturityTime)
-        ) {
-            markInvestmentMatured(inv);
-        }
-    });
-}
-
-
-function markInvestmentMatured(inv) {
-
-    if (!inv || inv.matured) return;
-
-    const investmentKey =
-        inv._firebaseKey || inv.id;
-
-    if (!investmentKey) return;
-
-    const user = getUserByPhone(inv.phone);
-
-    if (!user) return;
-
-    const newBalance =
-        money(user.balance) + money(inv.returnAmount);
-
-    const newWithdrawBalance =
-        money(user.withdrawBal) + money(inv.returnAmount);
-
-    const updates = {};
-
-    updates[
-        "investments/" +
-        investmentKey +
-        "/matured"
-    ] = true;
-
-    updates[
-        "investments/" +
-        investmentKey +
-        "/maturedAt"
-    ] = Date.now();
-
-    updates[
-        "users/" +
-        user.uid +
-        "/balance"
-    ] = newBalance;
-
-    updates[
-        "users/" +
-        user.uid +
-        "/withdrawBal"
-    ] = newWithdrawBalance;
-
-    rtdb.ref().update(updates)
-        .then(() => {
-            console.log(
-                "Investment maturity recorded:",
-                investmentKey
-            );
-        })
-        .catch(error => {
-            console.error(
-                "Investment maturity failed:",
-                error
-            );
-        });
-}
-
-
-/* ============================================================
-   AUTH TABS
-   ============================================================ */
-
-function switchAuthTab(tab) {
-
-    if (tab === "login") {
-
-        document
-            .getElementById("loginFormContainer")
-            .classList.remove("hide");
-
-        document
-            .getElementById("signupFormContainer")
-            .classList.add("hide");
-
-        document.getElementById("loginTabBtn").className =
-            "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition";
-
-        document.getElementById("signupTabBtn").className =
-            "flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition";
-
-    } else {
-
-        document
-            .getElementById("signupFormContainer")
-            .classList.remove("hide");
-
-        document
-            .getElementById("loginFormContainer")
-            .classList.add("hide");
-
-        document.getElementById("signupTabBtn").className =
-            "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition";
-
-        document.getElementById("loginTabBtn").className =
-            "flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition";
-    }
-}
-
-
-/* ============================================================
-   SIGNUP
-   ============================================================ */
-
-function sendSignupOTP() {
-
-    let phone =
-        document.getElementById("signupPhone").value.trim();
-
-    if (!phone || phone.length < 10) {
-        alert("Please enter a valid phone number");
-        return;
-    }
-
-    let existing = getUserByPhone(phone);
-
-    if (existing) {
-        alert("This mobile number is already registered!");
-        return;
-    }
-
-    alert("OTP sent successfully: 1234");
-
-    document.getElementById("signupOtp").value = "1234";
-}
-
-
-async function handleSignup() {
-
-    let phone =
-        document.getElementById("signupPhone").value.trim();
-
-    let otp =
-        document.getElementById("signupOtp").value.trim();
-
-    let password =
-        document.getElementById("signupPassword").value;
-
-    if (!phone || !otp || !password) {
-        alert("All fields are required");
-        return;
-    }
-
-    if (otp !== "1234") {
-        alert("Invalid OTP");
-        return;
-    }
-
-    let existing = getUserByPhone(phone);
-
-    if (existing) {
-        alert("Number already registered!");
-        return;
-    }
-
-    /*
-     * Permanent UID.
-     * It is generated ONCE and saved in Firebase.
-     */
-    const uid = makeId("UID");
-
-    const newUser = {
-
-        uid: uid,
-
-        /*
-         * Existing UI has no separate name field, so keep a
-         * stable display name rather than generating a random
-         * name on every render.
-         */
-        name: "User_" + phone.slice(-4),
-
-        phone: phone,
-        password: password,
-
-        balance: 0,
-        rechargeBal: 0,
-        withdrawBal: 0,
-
-        vipLevel: 0,
-
-        bank: null,
-
-        lastWithdrawDate: null,
-        lastSigninDate: null,
-
-        referredBy: signupRefBy || null,
-
-        createdAt: Date.now()
-    };
-
-    try {
-
-        await saveUser(newUser);
-
-        currentUser = newUser;
-
-        localStorage.setItem(
-            "earnx_current_user",
-            JSON.stringify(newUser)
-        );
-
-        alert("Signup successful! Please login.");
-
-        switchAuthTab("login");
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   LOGIN
-   ============================================================ */
-
-function handleLogin() {
-
-    let phone =
-        document.getElementById("loginPhone").value.trim();
-
-    let password =
-        document.getElementById("loginPassword").value;
-
-    if (
-        phone === ADMIN_PHONE &&
-        password === ADMIN_PASS
-    ) {
-
-        currentUser = {
-            phone: ADMIN_PHONE,
-            name: "System Control",
-            vipLevel: "SYSTEM"
-        };
-
-        openAdminPanel();
-        return;
-    }
-
-    let user = db.users.find(
-        u =>
-            u.phone === phone &&
-            u.password === password
-    );
-
-    if (!user) {
-        alert("Invalid mobile number or password");
-        return;
-    }
-
-    currentUser = user;
-
-    if (currentUser.lastSigninDate === undefined) {
-        currentUser.lastSigninDate = null;
-    }
-
-    localStorage.setItem(
-        "earnx_current_user",
-        JSON.stringify(currentUser)
-    );
-
-    showDashboard();
-}
-
-
-/* ============================================================
-   LOGOUT
-   ============================================================ */
-
-function handleLogout() {
-
-    currentUser = null;
-
-    localStorage.removeItem(
-        "earnx_current_user"
-    );
-
-    document
-        .getElementById("dashboardScreen")
-        .classList.add("hide");
-
-    document
-        .getElementById("authScreen")
-        .classList.remove("hide");
-
-    document
-        .getElementById("adminPanelModal")
-        .classList.add("hide");
-}
-
-
-/* ============================================================
-   DASHBOARD
-   ============================================================ */
-
-function showDashboard() {
-
-    checkProductExpiries();
-
-    document
-        .getElementById("authScreen")
-        .classList.add("hide");
-
-    document
-        .getElementById("dashboardScreen")
-        .classList.remove("hide");
-
-    showDashboardDataOnly();
-}
-
-
-function showDashboardDataOnly() {
-
-    if (!currentUser) return;
-
-    /*
-     * FIX:
-     * Previously this UID was random every time.
-     * Now the permanent Firebase UID is displayed.
-     */
-
-    document.getElementById("headerUsername").innerText =
-        currentUser.name ||
-        "User_" + currentUser.phone.slice(-4);
-
-    document.getElementById("headerUserId").innerText =
-        currentUser.uid ||
-        "N/A";
-
-    document.getElementById("userBalanceDisplay").innerText =
-        money(currentUser.balance).toFixed(2);
-
-    document.getElementById("userRechargeBal").innerText =
-        "₹" + money(currentUser.rechargeBal).toFixed(2);
-
-    document.getElementById("userWithdrawBal").innerText =
-        "₹" + money(currentUser.withdrawBal).toFixed(2);
-
-    let vipBadgeText =
-        currentUser.vipLevel > 0
-            ? "VIP " + currentUser.vipLevel
-            : "VIP 0";
-
-    document.getElementById("userVipBadge").innerText =
-        vipBadgeText;
-
-    if (document.getElementById("modalCurrentVipBadge")) {
-        document.getElementById("modalCurrentVipBadge").innerText =
-            vipBadgeText;
-    }
-
-    let uniqueLink =
-        window.location.origin +
-        window.location.pathname +
-        "?ref=" +
-        encodeURIComponent(currentUser.phone);
-
-    document.getElementById("userUniqueInviteLink").value =
-        uniqueLink;
-
-    renderProducts();
-    renderUserHistory();
-    renderTeamData();
-
-    checkBankStatusUI();
-    checkDailyWithdrawLimit();
-}
-
-
-function copyUniqueInviteLink() {
-
-    let linkInput =
-        document.getElementById("userUniqueInviteLink");
-
-    linkInput.select();
-
-    navigator.clipboard
-        .writeText(linkInput.value)
-        .then(() => {
-            alert("Unique invite link copied successfully!");
-        })
-        .catch(() => {
-            alert("Please copy the invite link manually.");
-        });
-}
-
-
-/* ============================================================
-   DAILY SIGN-IN
-   ============================================================ */
-
-async function claimDailySignin() {
-
-    if (!currentUser) return;
-
-    let todayStr =
-        new Date().toDateString();
-
-    if (
-        currentUser.lastSigninDate ===
-        todayStr
-    ) {
-        alert(
-            "You have already claimed today's Daily Sign-in! Please try again tomorrow."
-        );
-        return;
-    }
-
-    const user = getUserByPhone(
-        currentUser.phone
-    );
-
-    if (!user || !user.uid) {
-        alert("User record not found.");
-        return;
-    }
-
-    const newBalance =
-        money(user.balance) + 4;
-
-    const newRechargeBalance =
-        money(user.rechargeBal) + 4;
-
-    try {
-
-        await updateRecord(
-            "users",
-            user.uid,
-            {
-                balance: newBalance,
-                rechargeBal: newRechargeBalance,
-                lastSigninDate: todayStr
-            }
-        );
-
-        alert(
-            "Congratulations! ₹4 successfully added to your Recharge Balance."
-        );
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   VIP MODAL
-   ============================================================ */
-
-function openVipModal() {
-
-    if (
-        currentUser &&
-        document.getElementById("modalCurrentVipBadge")
-    ) {
-
-        document.getElementById(
-            "modalCurrentVipBadge"
-        ).innerText =
-            currentUser.vipLevel > 0
-                ? "VIP " + currentUser.vipLevel
-                : "VIP 0";
-    }
-
-    document
-        .getElementById("vipStatusModal")
-        .classList.remove("hide");
-}
-
-
-function closeVipModal() {
-
-    document
-        .getElementById("vipStatusModal")
-        .classList.add("hide");
-}
-
-
-/* ============================================================
-   TAB NAVIGATION
-   ============================================================ */
-
-function switchTab(tabName) {
-
-    [
-        "viewHome",
-        "viewInvest",
-        "viewTeam",
-        "viewAccount",
-        "viewRecharge",
-        "viewWithdraw"
-    ].forEach(id => {
-
-        document
-            .getElementById(id)
-            .classList.add("hide");
-    });
-
-    [
-        "navHomeBtn",
-        "navInvestBtn",
-        "navTeamBtn",
-        "navAccountBtn"
-    ].forEach(id => {
-
-        document.getElementById(id).className =
-            "flex flex-col items-center text-gray-500 font-semibold text-xs";
-    });
-
-
-    if (tabName === "home") {
-
-        document
-            .getElementById("viewHome")
-            .classList.remove("hide");
-
-        document.getElementById("navHomeBtn").className =
-            "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-
-    } else if (tabName === "invest") {
-
-        document
-            .getElementById("viewInvest")
-            .classList.remove("hide");
-
-        document.getElementById("navInvestBtn").className =
-            "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-
-        renderProducts();
-
-    } else if (tabName === "team") {
-
-        document
-            .getElementById("viewTeam")
-            .classList.remove("hide");
-
-        document.getElementById("navTeamBtn").className =
-            "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-
-        renderTeamData();
-
-    } else if (tabName === "account") {
-
-        document
-            .getElementById("viewAccount")
-            .classList.remove("hide");
-
-        document.getElementById("navAccountBtn").className =
-            "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-
-    } else if (tabName === "recharge") {
-
-        document
-            .getElementById("viewRecharge")
-            .classList.remove("hide");
-
-    } else if (tabName === "withdraw") {
-
-        document
-            .getElementById("viewWithdraw")
-            .classList.remove("hide");
-
-        checkBankStatusUI();
-        checkDailyWithdrawLimit();
-    }
-}
-
-
-function switchInvestSubTab(subTab) {
-
-    currentInvestSubTab = subTab;
-
-    ["VIP 1", "VIP 2", "BENEFITS"]
-        .forEach((t, index) => {
-
-            let btnId =
-                "invSubTab" + (index + 1);
-
-            if (t === subTab) {
-
-                document.getElementById(btnId).className =
-                    "flex-1 py-2 rounded bg-emerald-600 text-white transition text-center";
-
-            } else {
-
-                document.getElementById(btnId).className =
-                    "flex-1 py-2 rounded text-gray-600 transition text-center";
-            }
-        });
-
-    renderProducts();
-}
-
-
-/* ============================================================
-   TEAM
-   ============================================================ */
-
-function renderTeamData() {
-
-    if (!currentUser) return;
-
-    let myReferrals =
-        db.users.filter(
-            u =>
-                u.referredBy ===
-                currentUser.phone
-        );
-
-    let totalCount =
-        myReferrals.length;
-
-    document.getElementById(
-        "teamTotalCount"
-    ).innerText = totalCount;
-
-    let tierName = "Team A (4%)";
-
-    if (
-        totalCount >= 150 &&
-        totalCount < 1500
-    ) {
-
-        tierName = "Team C (1%)";
-
-    } else if (
-        totalCount >= 25 &&
-        totalCount < 150
-    ) {
-
-        tierName = "Team B (2%)";
-
-    } else if (totalCount >= 1500) {
-
-        tierName = "Team C (Max 1%)";
-    }
-
-    document.getElementById(
-        "teamCurrentTier"
-    ).innerText = tierName;
-
-    let teamHtml = "";
-
-    let myTeamComms =
-        db.teamCommissions.filter(
-            c =>
-                c.earnerPhone ===
-                currentUser.phone
-        );
-
-    if (myTeamComms.length === 0) {
-
-        teamHtml =
-            '<p class="text-gray-400 text-center py-2">No team deposit records yet.</p>';
-
-    } else {
-
-        myTeamComms.forEach(c => {
-
-            teamHtml += `
-                <div class="bg-gray-50 p-2.5 rounded flex justify-between items-center">
-                    <div>
-                        <div class="font-bold">
-                            Member: ${escapeHtml(c.memberPhone)}
-                        </div>
-                        <div class="text-[10px] text-gray-400">
-                            Deposit: ₹${money(c.depositAmount)}
-                            | Tier: ${escapeHtml(c.tier)}
-                            (${money(c.rate)}%)
-                        </div>
-                    </div>
-                    <span class="font-bold text-emerald-600">
-                        +₹${money(c.commissionEarned).toFixed(2)}
-                    </span>
-                </div>
-            `;
-        });
-    }
-
-    document.getElementById(
-        "teamMembersList"
-    ).innerHTML = teamHtml;
-}
-
-
-/* ============================================================
-   WITHDRAW LIMIT UI
-   ============================================================ */
-
-function checkDailyWithdrawLimit() {
-
-    if (!currentUser) return;
-
-    let todayStr =
-        new Date().toDateString();
-
-    if (
-        currentUser.lastWithdrawDate ===
-        todayStr
-    ) {
-
-        document
-            .getElementById("submitWithdrawBtn")
-            .classList.add("hide");
-
-        document
-            .getElementById("withdrawLimitMsg")
-            .classList.remove("hide");
-
-    } else {
-
-        document
-            .getElementById("submitWithdrawBtn")
-            .classList.remove("hide");
-
-        document
-            .getElementById("withdrawLimitMsg")
-            .classList.add("hide");
-    }
-}
-
-
-/* ============================================================
-   RECHARGE UI
-   ============================================================ */
-
-function setRechargeAmount(amt) {
-
-    document.getElementById(
-        "rechargeInputAmount"
-    ).value = amt;
-}
-
-
-/*
- * Payment UI retained as-is.
- * Real payment verification should be performed by a trusted
- * backend rather than trusting browser-submitted data.
- */
-
-let currentDepositAmount = 0;
-
-function proceedToPaymentGateway() {
-
-    let amt =
-        parseFloat(
-            document.getElementById(
-                "rechargeInputAmount"
-            ).value
-        );
-
-    if (
-        !amt ||
-        amt < 100 ||
-        amt > 100000
-    ) {
-        alert(
-            "Deposit limit is ₹100 to ₹1,00,000"
-        );
-        return;
-    }
-
-    currentDepositAmount = amt;
-
-    let randomIndex =
-        Math.floor(
-            Math.random() *
-            ROTATING_UPIS.length
-        );
-
-    let assignedUpi =
-        ROTATING_UPIS[randomIndex];
-
-    document.getElementById(
-        "assignedUpiText"
-    ).innerText = assignedUpi;
-
-    let upiDeepLink =
-        `upi://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-
-    document.getElementById(
-        "paytmAppBtn"
-    ).href =
-        `paytmmp://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-
-    document.getElementById(
-        "phonepeAppBtn"
-    ).href =
-        `phonepe://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-
-    document.getElementById(
-        "gpayAppBtn"
-    ).href =
-        `tez://upi/pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-
-    document.getElementById(
-        "mobikwikAppBtn"
-    ).href = upiDeepLink;
-
-    document
-        .getElementById("paymentModal")
-        .classList.remove("hide");
-
-    startPaymentTimer(12 * 60);
-}
-
-
-function startPaymentTimer(duration) {
-
-    let timer = duration;
-
-    if (activeTimerInterval) {
-        clearInterval(activeTimerInterval);
-    }
-
-    activeTimerInterval =
-        setInterval(() => {
-
-            let minutes =
-                parseInt(
-                    timer / 60,
-                    10
-                );
-
-            let seconds =
-                parseInt(
-                    timer % 60,
-                    10
-                );
-
-            minutes =
-                minutes < 10
-                    ? "0" + minutes
-                    : minutes;
-
-            seconds =
-                seconds < 10
-                    ? "0" + seconds
-                    : seconds;
-
-            document.getElementById(
-                "paymentTimer"
-            ).innerText =
-                minutes + ":" + seconds;
-
-            if (--timer < 0) {
-
-                clearInterval(
-                    activeTimerInterval
-                );
-
-                alert(
-                    "Payment session expired."
-                );
-
-                closePaymentModal();
-            }
-
-        }, 1000);
-}
-
-
-function closePaymentModal() {
-
-    if (activeTimerInterval) {
-        clearInterval(activeTimerInterval);
-    }
-
-    document
-        .getElementById("paymentModal")
-        .classList.add("hide");
-}
-
-
-/* ============================================================
-   DEPOSIT RECORD
-   ============================================================ */
-
-function submitPaymentProof() {
-
-    let utr =
-        document.getElementById(
-            "paymentUtrInput"
-        ).value.trim();
-
-    let screenshotFile =
-        document.getElementById(
-            "paymentScreenshotInput"
-        ).files[0];
-
-    let utrRegex = /^\d{12}$/;
-
-    if (
-        !utr ||
-        !utrRegex.test(utr)
-    ) {
-
-        alert(
-            "Please enter a valid 12-digit numeric UTR / Transaction ID!"
-        );
-
-        return;
-    }
-
-    if (!screenshotFile) {
-
-        alert(
-            "Please upload the payment screenshot before submitting!"
-        );
-
-        return;
-    }
-
-    /*
-     * Keep existing screenshot behavior for compatibility.
-     * Large images should eventually be moved to Firebase
-     * Storage rather than storing Base64 in RTDB.
-     */
-
-    let reader =
-        new FileReader();
-
-    reader.onload = async function(e) {
-
-        let screenshotDataUrl =
-            e.target.result;
-
-        let depositId =
-            makeId("DEP");
-
-        let newDep = {
-
-            id: depositId,
-
-            phone: currentUser.phone,
-
-            userUid:
-                currentUser.uid || null,
-
-            userName:
-                currentUser.name ||
-                "User_" +
-                currentUser.phone.slice(-4),
-
-            amount:
-                currentDepositAmount,
-
-            utr: utr,
-
-            screenshot:
-                screenshotFile.name,
-
-            screenshotUrl:
-                screenshotDataUrl,
-
-            status: "Pending",
-
-            date:
-                new Date().toLocaleString(),
-
-            createdAt:
-                Date.now()
-        };
-
-        try {
-
-            await saveRecord(
-                "deposits",
-                depositId,
-                newDep
-            );
-
-            document.getElementById(
-                "rechargeInputAmount"
-            ).value = "";
-
-            document.getElementById(
-                "paymentUtrInput"
-            ).value = "";
-
-            document.getElementById(
-                "paymentScreenshotInput"
-            ).value = "";
-
-            currentDepositAmount = 0;
-
-            closePaymentModal();
-
-            alert(
-                "Proof submitted successfully! Awaiting system verification."
-            );
-
+            document.getElementById("userUniqueInviteLink").value = window.location.origin + window.location.pathname + "?ref=" + encodeURIComponent(currentUser.phone);
+            renderProducts();
             renderUserHistory();
-
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
-    reader.readAsDataURL(
-        screenshotFile
-    );
-}
-
-
-/* ============================================================
-   BANK DETAILS
-   ============================================================ */
-
-function checkBankStatusUI() {
-
-    if (!currentUser) return;
-
-    if (currentUser.bank) {
-
-        document
-            .getElementById("bankDetailsCard")
-            .classList.add("hide");
-
-        document
-            .getElementById("withdrawFormCard")
-            .classList.remove("hide");
-
-        document.getElementById(
-            "savedBankName"
-        ).innerText =
-            currentUser.bank.name;
-
-        document.getElementById(
-            "savedBankAcc"
-        ).innerText =
-            currentUser.bank.acc;
-
-        document.getElementById(
-            "savedBankIfsc"
-        ).innerText =
-            currentUser.bank.ifsc;
-
-    } else {
-
-        document
-            .getElementById("bankDetailsCard")
-            .classList.remove("hide");
-
-        document
-            .getElementById("withdrawFormCard")
-            .classList.add("hide");
-    }
-}
-
-
-async function saveBankDetails() {
-
-    if (!currentUser) return;
-
-    let name =
-        document.getElementById(
-            "bankHolderName"
-        ).value.trim();
-
-    let acc =
-        document.getElementById(
-            "bankAccNo"
-        ).value.trim();
-
-    let ifsc =
-        document.getElementById(
-            "bankIfsc"
-        ).value.trim();
-
-    if (!name || !acc || !ifsc) {
-
-        alert(
-            "Please fill all bank details (Name, Account Number, IFSC)"
-        );
-
-        return;
-    }
-
-    let user =
-        getUserByPhone(
-            currentUser.phone
-        );
-
-    if (!user || !user.uid) {
-
-        alert("User record not found.");
-        return;
-    }
-
-    try {
-
-        await updateRecord(
-            "users",
-            user.uid,
-            {
-                bank: {
-                    name: name,
-                    acc: acc,
-                    ifsc: ifsc
-                },
-
-                /*
-                 * Save a display name too, so admin has an actual
-                 * persistent name instead of User_####.
-                 */
-                name: name
-            }
-        );
-
-        alert(
-            "Bank details saved successfully!"
-        );
-
-        checkBankStatusUI();
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   WITHDRAW RECORD
-   ============================================================ */
-
-async function submitWithdrawRequest() {
-
-    if (!currentUser) return;
-
-    let todayStr =
-        new Date().toDateString();
-
-    if (
-        currentUser.lastWithdrawDate ===
-        todayStr
-    ) {
-
-        alert(
-            "You have already used your 1 withdrawal limit for today!"
-        );
-
-        return;
-    }
-
-    let amt =
-        parseFloat(
-            document.getElementById(
-                "withdrawInputAmount"
-            ).value
-        );
-
-    if (!amt || amt < 100) {
-
-        alert(
-            "Minimum withdrawal amount is ₹100!"
-        );
-
-        return;
-    }
-
-    if (
-        money(currentUser.withdrawBal) <
-        100
-    ) {
-
-        alert(
-            "Your withdrawable balance is 0 or less than minimum limit (₹100)! You cannot withdraw."
-        );
-
-        return;
-    }
-
-    if (
-        amt >
-        money(currentUser.withdrawBal)
-    ) {
-
-        alert(
-            "Insufficient withdrawable balance!"
-        );
-
-        return;
-    }
-
-    if (amt > 30000) {
-
-        alert(
-            "Maximum withdrawal limit is ₹30,000!"
-        );
-
-        return;
-    }
-
-    if (!currentUser.bank) {
-
-        alert(
-            "Please save bank details first."
-        );
-
-        return;
-    }
-
-    let tax =
-        amt * 0.12;
-
-    let netAmt =
-        amt - tax;
-
-    const withdrawalId =
-        makeId("WD");
-
-    const user =
-        getUserByPhone(
-            currentUser.phone
-        );
-
-    if (!user || !user.uid) {
-
-        alert("User record not found.");
-        return;
-    }
-
-    const newWd = {
-
-        id: withdrawalId,
-
-        phone:
-            user.phone,
-
-        userUid:
-            user.uid,
-
-        userName:
-            user.name ||
-            user.bank?.name ||
-            "User",
-
-        amount:
-            amt,
-
-        netAmount:
-            netAmt,
-
-        tax:
-            tax,
-
-        bankInfo:
-            user.bank,
-
-        status:
-            "Pending",
-
-        date:
-            new Date().toLocaleString(),
-
-        createdAt:
-            Date.now()
-    };
-
-    /*
-     * IMPORTANT:
-     * Only the withdrawal record is created here.
-     * Balance/accounting changes for real-money withdrawals
-     * should be handled by trusted server-side code.
-     */
-
-    try {
-
-        await saveRecord(
-            "withdraws",
-            withdrawalId,
-            newWd
-        );
-
-        alert(
-            "Withdrawal request submitted successfully."
-        );
-
-        document.getElementById(
-            "withdrawInputAmount"
-        ).value = "";
-
-        renderUserHistory();
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   USER HISTORY
-   ============================================================ */
-
-function renderUserHistory() {
-
-    if (!currentUser) return;
-
-    let depHtml = "";
-
-    let myDeps =
-        db.deposits.filter(
-            d =>
-                d.phone ===
-                currentUser.phone
-        );
-
-    if (myDeps.length === 0) {
-
-        depHtml =
-            '<p class="text-gray-400 text-center py-2">No recharge records.</p>';
-
-    } else {
-
-        myDeps.forEach(d => {
-
-            let color =
-                d.status === "Approved"
-                    ? "text-emerald-600"
-                    : d.status === "Rejected"
-                        ? "text-red-500"
-                        : "text-amber-500";
-
-            depHtml += `
-                <div class="bg-gray-50 p-2.5 rounded flex justify-between items-center">
-                    <div>
-                        <div class="font-bold">
-                            ₹${money(d.amount)}
-                        </div>
-
-                        <div class="text-[10px] text-gray-400">
-                            UTR: ${escapeHtml(d.utr)}
-                            |
-                            Screenshot:
-                            ${escapeHtml(d.screenshot || "Uploaded")}
-                            |
-                            ${escapeHtml(d.date)}
-                        </div>
-                    </div>
-
-                    <span class="font-bold ${color}">
-                        ${escapeHtml(d.status)}
-                    </span>
-                </div>
-            `;
-        });
-    }
-
-    if (
-        document.getElementById(
-            "userRechargeHistory"
-        )
-    ) {
-
-        document.getElementById(
-            "userRechargeHistory"
-        ).innerHTML = depHtml;
-    }
-
-
-    let wdHtml = "";
-
-    let myWds =
-        db.withdraws.filter(
-            w =>
-                w.phone ===
-                currentUser.phone
-        );
-
-    if (myWds.length === 0) {
-
-        wdHtml =
-            '<p class="text-gray-400 text-center py-2">No withdrawal records.</p>';
-
-    } else {
-
-        myWds.forEach(w => {
-
-            let color =
-                w.status === "Completed"
-                    ? "text-emerald-600"
-                    : w.status === "Rejected"
-                        ? "text-red-500"
-                        : "text-amber-500";
-
-            wdHtml += `
-                <div class="bg-gray-50 p-3 rounded-lg space-y-1">
-
-                    <div class="flex justify-between font-bold">
-                        <span>
-                            Amount: ₹${money(w.amount)}
-                        </span>
-
-                        <span class="${color}">
-                            ${escapeHtml(w.status)}
-                        </span>
-                    </div>
-
-                    <div class="text-[11px] text-gray-600 flex justify-between">
-
-                        <span>
-                            Tax: ₹${money(w.tax).toFixed(2)}
-                        </span>
-
-                        <span>
-                            Net:
-                            <strong class="text-emerald-600">
-                                ₹${money(w.netAmount).toFixed(2)}
-                            </strong>
-                        </span>
-
-                    </div>
-
-                    <div class="text-[10px] text-gray-400">
-                        Date: ${escapeHtml(w.date)}
-                    </div>
-
-                </div>
-            `;
-        });
-    }
-
-    if (
-        document.getElementById(
-            "userWithdrawHistory"
-        )
-    ) {
-
-        document.getElementById(
-            "userWithdrawHistory"
-        ).innerHTML = wdHtml;
-    }
-}
-
-
-/* ============================================================
-   PRODUCTS
-   ============================================================ */
-
-function renderProducts() {
-
-    if (!currentUser) return;
-
-    let prodHtml = "";
-
-    let filteredProducts =
-        db.products.filter(
-            p =>
-                (p.category || "VIP 1") ===
-                currentInvestSubTab
-        );
-
-    /*
-     * Extra protection:
-     * expired products are not displayed.
-     */
-
-    const now = Date.now();
-
-    filteredProducts =
-        filteredProducts.filter(p => {
-
-            if (!p.createdAt) return true;
-
-            return (
-                now -
-                Number(p.createdAt)
-            ) <
-            24 * 60 * 60 * 1000;
-        });
-
-
-    filteredProducts.forEach(p => {
-
-        let alreadyPurchased =
-            db.investments.some(
-                inv =>
-                    inv.phone ===
-                    currentUser.phone &&
-                    String(inv.productId) ===
-                    String(p.id)
-            );
-
-        let btnText =
-            alreadyPurchased
-                ? "Purchased (1/1)"
-                : "Invest Now";
-
-        let btnClass =
-            alreadyPurchased
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-emerald-600 hover:bg-emerald-700";
-
-        prodHtml += `
-            <div class="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3">
-
-                <img
-                    src="${escapeHtml(p.image)}"
-                    class="w-16 h-16 object-cover rounded-lg"
-                    onerror="this.style.display='none'"
-                >
-
-                <div class="flex-1">
-
-                    <div class="font-bold text-xs text-gray-900">
-                        ${escapeHtml(p.name)}
-                    </div>
-
-                    <div class="text-[10px] text-emerald-600 font-semibold">
-                        Price: ₹${money(p.price)}
-                        |
-                        Return: ₹${money(p.daily)} (24h)
-                    </div>
-
-                    <div class="text-[9px] text-gray-400">
-                        Category:
-                        ${escapeHtml(p.category || "VIP 1")}
-                    </div>
-
-                </div>
-
-                <button
-                    onclick="investProduct('${escapeHtml(String(p.id))}', ${money(p.price)}, ${money(p.daily)})"
-                    class="${btnClass} text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
-                    ${alreadyPurchased ? "disabled" : ""}
-                >
-                    ${btnText}
-                </button>
-
-            </div>
-        `;
-    });
-
-    document.getElementById(
-        "productListContainer"
-    ).innerHTML =
-        prodHtml ||
-        `<p class="text-gray-400 text-center py-4">
-            No products available in ${escapeHtml(currentInvestSubTab)}.
-        </p>`;
-}
-
-
-/*
- * Investment record persistence.
- *
- * This function does NOT perform financial settlement logic.
- * It only demonstrates safe record-level persistence.
- */
-
-async function investProduct(
-    id,
-    price,
-    returnAmount
-) {
-
-    if (!currentUser) return;
-
-    let already =
-        db.investments.some(
-            inv =>
-                inv.phone ===
-                currentUser.phone &&
-                String(inv.productId) ===
-                String(id)
-        );
-
-    if (already) {
-
-        alert(
-            "You can purchase this product only 1 time!"
-        );
-
-        return;
-    }
-
-    /*
-     * Real-money balance deduction/crediting should be
-     * validated by a trusted backend.
-     *
-     * The client must not be treated as the authority
-     * for account balances.
-     */
-
-    const investmentId =
-        makeId("INV");
-
-    const newInv = {
-
-        id: investmentId,
-
-        phone:
-            currentUser.phone,
-
-        userUid:
-            currentUser.uid || null,
-
-        productId:
-            id,
-
-        price:
-            money(price),
-
-        returnAmount:
-            money(returnAmount),
-
-        maturityTime:
-            Date.now() +
-            24 * 60 * 60 * 1000,
-
-        matured:
-            false,
-
-        createdAt:
-            Date.now()
-    };
-
-    try {
-
-        await saveRecord(
-            "investments",
-            investmentId,
-            newInv
-        );
-
-        alert(
-            "Investment record created successfully."
-        );
-
-        renderProducts();
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   ADMIN
-   ============================================================ */
-
-function openAdminPanel() {
-
-    document
-        .getElementById("adminPanelModal")
-        .classList.remove("hide");
-
-    renderAdminData();
-}
-
-
-function closeAdminPanel() {
-
-    document
-        .getElementById("adminPanelModal")
-        .classList.add("hide");
-
-    if (
-        currentUser &&
-        currentUser.phone !== ADMIN_PHONE
-    ) {
-        showDashboard();
-    }
-}
-
-
-function switchAdminTab(tab) {
-
-    [
-        "users",
-        "deposits",
-        "withdraws",
-        "products"
-    ].forEach(t => {
-
-        let section =
-            document.getElementById(
-                "adminSection" +
-                t.charAt(0).toUpperCase() +
-                t.slice(1)
-            );
-
-        if (section) {
-            section.classList.add("hide");
+            renderTeamData();
+            checkBankStatusUI();
+            checkDailyWithdrawLimit();
         }
 
-        let tabEl =
-            document.getElementById(
-                "admTab" +
-                (
-                    t === "users"
-                        ? "Users"
-                        : t === "deposits"
-                            ? "Dep"
-                            : t === "withdraws"
-                                ? "Wd"
-                                : "Prod"
-                )
-            );
-
-        if (tabEl) {
-            tabEl.className =
-                "py-2 rounded";
+        function copyUniqueInviteLink() {
+            let linkInput = document.getElementById("userUniqueInviteLink");
+            linkInput.select();
+            navigator.clipboard.writeText(linkInput.value).then(() => {
+                alert("Unique invite link copied successfully!");
+            }).catch(() => { alert("Please copy the invite link manually."); });
         }
-    });
 
-    let targetEl =
-        document.getElementById(
-            "adminSection" +
-            tab.charAt(0).toUpperCase() +
-            tab.slice(1)
-        );
-
-    if (targetEl) {
-        targetEl.classList.remove("hide");
-    }
-
-    let targetTabEl =
-        document.getElementById(
-            "admTab" +
-            (
-                tab === "users"
-                    ? "Users"
-                    : tab === "deposits"
-                        ? "Dep"
-                        : tab === "withdraws"
-                            ? "Wd"
-                            : "Prod"
-            )
-        );
-
-    if (targetTabEl) {
-        targetTabEl.className =
-            "py-2 bg-emerald-600 rounded";
-    }
-}
-
-
-/* ============================================================
-   ADMIN DATA
-   ============================================================ */
-
-function renderAdminData() {
-
-    /* ---------------- USERS ---------------- */
-
-    let uHtml = "";
-
-    db.users.forEach(u => {
-
-        const uid =
-            u.uid ||
-            u._firebaseKey ||
-            "N/A";
-
-        const displayName =
-            u.name ||
-            (
-                u.bank &&
-                u.bank.name
-                    ? u.bank.name
-                    : "User_" +
-                      String(u.phone || "").slice(-4)
-            );
-
-        let bankDetailsBox =
-            u.bank
-                ? `
-                    <div class="text-[10px] text-gray-300 space-y-0.5 mt-1 pt-1 border-t border-gray-700">
-
-                        <div>
-                            Name:
-                            <span class="text-yellow-400 font-bold">
-                                ${escapeHtml(u.bank.name)}
-                            </span>
-                        </div>
-
-                        <div>
-                            A/C No:
-                            <span class="text-emerald-400 font-bold">
-                                ${escapeHtml(u.bank.acc)}
-                            </span>
-                        </div>
-
-                        <div>
-                            IFSC:
-                            <span class="text-cyan-400 font-bold">
-                                ${escapeHtml(u.bank.ifsc)}
-                            </span>
-                        </div>
-
-                    </div>
-                `
-                : `
-                    <div class="text-red-400 text-[10px] mt-1 pt-1 border-t border-gray-700">
-                        Bank details not added
-                    </div>
-                `;
-
-        uHtml += `
-            <div class="bg-gray-800 p-2.5 rounded space-y-1 text-xs">
-
-                <div class="flex justify-between font-bold">
-
-                    <span>
-                        UID:
-                        ${escapeHtml(uid)}
-                    </span>
-
-                    <span class="text-emerald-400">
-                        VIP ${money(u.vipLevel)}
-                        |
-                        Bal: ₹${money(u.balance).toFixed(2)}
-                    </span>
-
-                </div>
-
-                <div class="text-[10px] text-gray-300">
-                    Name: ${escapeHtml(displayName)}
-                </div>
-
-                <div class="text-[10px] text-gray-300">
-                    Phone: ${escapeHtml(u.phone)}
-                    |
-                    ReferredBy:
-                    ${escapeHtml(u.referredBy || "None")}
-                </div>
-
-                ${bankDetailsBox}
-
-            </div>
-        `;
-    });
-
-    let adminUsersListEl =
-        document.getElementById(
-            "adminUsersList"
-        );
-
-    if (adminUsersListEl) {
-
-        adminUsersListEl.innerHTML =
-            uHtml ||
-            '<p class="text-gray-400">No users.</p>';
-    }
-
-
-    /* ---------------- DEPOSITS ---------------- */
-
-    let dHtml = "";
-
-    db.deposits.forEach(d => {
-
-        let matchedUser =
-            getUserByPhone(d.phone);
-
-        let userUid =
-            d.userUid ||
-            (matchedUser
-                ? matchedUser.uid
-                : "N/A");
-
-        let userName =
-            d.userName ||
-            (matchedUser
-                ? matchedUser.name
-                : "Unknown User");
-
-        let bankDetails =
-            (
-                matchedUser &&
-                matchedUser.bank
-            )
-                ? `
-                    Name:
-                    ${escapeHtml(matchedUser.bank.name)}
-                    |
-                    A/C:
-                    ${escapeHtml(matchedUser.bank.acc)}
-                    |
-                    IFSC:
-                    ${escapeHtml(matchedUser.bank.ifsc)}
-                `
-                : "No bank details added";
-
-        let actionBtns =
-            d.status === "Pending"
-                ? `
-                    <button
-                        onclick="approveDeposit('${escapeHtml(String(d.id))}')"
-                        class="bg-emerald-600 px-2 py-1 rounded text-[10px] font-bold mr-1">
-                        Approve
-                    </button>
-
-                    <button
-                        onclick="rejectDeposit('${escapeHtml(String(d.id))}')"
-                        class="bg-red-600 px-2 py-1 rounded text-[10px] font-bold">
-                        Reject
-                    </button>
-                `
-                : `<span class="font-bold">
-                    ${escapeHtml(d.status)}
-                   </span>`;
-
-
-        let safeScreenshotUrl =
-            d.screenshotUrl || "";
-
-        let screenshotPreview =
-            safeScreenshotUrl
-                ? `
-                    <div class="mt-2">
-
-                        <div class="text-[10px] text-gray-400 mb-1">
-                            Attached Screenshot (Click to Open):
-                        </div>
-
-                        <img
-                            src="${safeScreenshotUrl}"
-                            onclick="openImagePreview(this.src)"
-                            class="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer hover:opacity-90 transition"
-                        >
-
-                    </div>
-                `
-                : `
-                    <div class="text-yellow-400 text-[11px] mt-1">
-                        Screenshot File:
-                        ${escapeHtml(d.screenshot || "Not attached")}
-                    </div>
-                `;
-
-
-        dHtml += `
-            <div class="bg-gray-800 p-3 rounded-xl space-y-1.5 text-xs">
-
-                <div class="flex justify-between font-bold text-emerald-400">
-
-                    <span>
-                        Name:
-                        ${escapeHtml(userName)}
-                        (UID:
-                        ${escapeHtml(userUid)})
-                    </span>
-
-                    <span>
-                        ₹${money(d.amount).toFixed(2)}
-                    </span>
-
-                </div>
-
-                <div class="text-gray-300">
-                    Mobile:
-                    ${escapeHtml(d.phone)}
-                </div>
-
-                <div class="text-gray-300 text-[11px]">
-                    Bank Info:
-                    <span class="text-yellow-400 font-bold">
-                        ${bankDetails}
-                    </span>
-                </div>
-
-                <div class="text-gray-300">
-                    UTR / Transaction ID:
-                    <span class="text-emerald-400 font-mono font-bold">
-                        ${escapeHtml(d.utr)}
-                    </span>
-                </div>
-
-                ${screenshotPreview}
-
-                <div class="text-[10px] text-gray-400 pt-1">
-                    Date:
-                    ${escapeHtml(d.date)}
-                </div>
-
-                <div class="pt-1 text-right">
-                    ${actionBtns}
-                </div>
-
-            </div>
-        `;
-    });
-
-    let adminDepositsListEl =
-        document.getElementById(
-            "adminDepositsList"
-        );
-
-    if (adminDepositsListEl) {
-
-        adminDepositsListEl.innerHTML =
-            dHtml ||
-            '<p class="text-gray-400">No deposits.</p>';
-    }
-
-
-    /* ---------------- WITHDRAWALS ---------------- */
-
-    let wHtml = "";
-
-    db.withdraws.forEach(w => {
-
-        let actionBtns =
-            w.status === "Pending"
-                ? `
-                    <button
-                        onclick="approveWithdraw('${escapeHtml(String(w.id))}')"
-                        class="bg-emerald-600 px-2 py-1 rounded text-[10px] font-bold mr-1">
-                        Approve
-                    </button>
-
-                    <button
-                        onclick="rejectWithdraw('${escapeHtml(String(w.id))}')"
-                        class="bg-red-600 px-2 py-1 rounded text-[10px] font-bold">
-                        Reject
-                    </button>
-                `
-                : `
-                    <span class="font-bold">
-                        ${escapeHtml(w.status)}
-                    </span>
-                `;
-
-
-        let bank =
-            w.bankInfo ||
-            (
-                getUserByPhone(w.phone) &&
-                getUserByPhone(w.phone).bank
-            );
-
-        let bankDetailsBox =
-            bank
-                ? `
-                    <div class="bg-gray-900 p-2 rounded border border-gray-700 space-y-0.5 mt-1 font-mono text-[11px]">
-
-                        <div>
-                            <span class="text-gray-400">
-                                Holder Name:
-                            </span>
-
-                            <span class="text-yellow-400 font-bold">
-                                ${escapeHtml(bank.name)}
-                            </span>
-                        </div>
-
-                        <div>
-                            <span class="text-gray-400">
-                                Account No:
-                            </span>
-
-                            <span class="text-emerald-400 font-bold">
-                                ${escapeHtml(bank.acc)}
-                            </span>
-                        </div>
-
-                        <div>
-                            <span class="text-gray-400">
-                                IFSC Code:
-                            </span>
-
-                            <span class="text-cyan-400 font-bold">
-                                ${escapeHtml(bank.ifsc)}
-                            </span>
-                        </div>
-
-                    </div>
-                `
-                : `
-                    <div class="text-red-400 text-[11px]">
-                        Bank details missing
-                    </div>
-                `;
-
-        let matchedUser =
-            getUserByPhone(w.phone);
-
-        let userName =
-            w.userName ||
-            (
-                matchedUser
-                    ? matchedUser.name
-                    : "Unknown User"
-            );
-
-        let uid =
-            w.userUid ||
-            (
-                matchedUser
-                    ? matchedUser.uid
-                    : "N/A"
-            );
-
-
-        wHtml += `
-            <div class="bg-gray-800 p-3 rounded-xl space-y-1.5 text-xs">
-
-                <div class="flex justify-between font-bold text-sm text-emerald-400">
-
-                    <span>
-                        User:
-                        ${escapeHtml(userName)}
-                        | UID:
-                        ${escapeHtml(uid)}
-                    </span>
-
-                    <span>
-                        ₹${money(w.amount).toFixed(2)}
-                    </span>
-
-                </div>
-
-                <div class="text-gray-300">
-                    Mobile:
-                    ${escapeHtml(w.phone)}
-                </div>
-
-                <div class="bg-gray-700/50 p-2 rounded flex justify-between font-semibold text-[11px]">
-
-                    <span>
-                        Tax:
-                        <strong class="text-red-400">
-                            ₹${money(w.tax).toFixed(2)}
-                        </strong>
-                    </span>
-
-                    <span>
-                        Net:
-                        <strong class="text-emerald-400">
-                            ₹${money(w.netAmount).toFixed(2)}
-                        </strong>
-                    </span>
-
-                </div>
-
-                <div class="text-gray-300 font-semibold pt-1">
-                    Destination Bank Details:
-                </div>
-
-                ${bankDetailsBox}
-
-                <div class="text-[10px] text-gray-400 pt-1">
-                    ${escapeHtml(w.date)}
-                </div>
-
-                <div class="pt-1 text-right">
-                    ${actionBtns}
-                </div>
-
-            </div>
-        `;
-    });
-
-    let adminWithdrawsListEl =
-        document.getElementById(
-            "adminWithdrawsList"
-        );
-
-    if (adminWithdrawsListEl) {
-
-        adminWithdrawsListEl.innerHTML =
-            wHtml ||
-            '<p class="text-gray-400">No withdrawals.</p>';
-    }
-
-
-    /* ---------------- PRODUCTS ---------------- */
-
-    let pHtml = "";
-
-    db.products.forEach(p => {
-
-        pHtml += `
-            <div class="bg-gray-800 p-2.5 rounded flex justify-between items-center text-xs">
-
-                <div>
-
-                    <div class="font-bold">
-                        ${escapeHtml(p.name)}
-                        - ₹${money(p.price)}
-                    </div>
-
-                    <div class="text-[10px] text-emerald-400">
-                        Category:
-                        ${escapeHtml(p.category || "VIP 1")}
-                    </div>
-
-                </div>
-
-                <button
-                    onclick="adminDeleteProduct('${escapeHtml(String(p.id))}')"
-                    class="text-red-400 font-bold">
-                    Delete
-                </button>
-
-            </div>
-        `;
-    });
-
-    let adminProductsListEl =
-        document.getElementById(
-            "adminProductsList"
-        );
-
-    if (adminProductsListEl) {
-
-        adminProductsListEl.innerHTML =
-            pHtml ||
-            '<p class="text-gray-400">No products.</p>';
-    }
-}
-
-
-/* ============================================================
-   IMAGE PREVIEW
-   ============================================================ */
-
-function openImagePreview(url) {
-
-    let modalImg =
-        document.getElementById(
-            "previewModalImg"
-        );
-
-    let previewModal =
-        document.getElementById(
-            "imagePreviewModal"
-        );
-
-    if (
-        modalImg &&
-        previewModal
-    ) {
-
-        modalImg.src = url;
-
-        previewModal
-            .classList
-            .remove("hide");
-    }
-}
-
-
-function closeImagePreview() {
-
-    let previewModal =
-        document.getElementById(
-            "imagePreviewModal"
-        );
-
-    let modalImg =
-        document.getElementById(
-            "previewModalImg"
-        );
-
-    if (previewModal) {
-        previewModal.classList.add("hide");
-    }
-
-    if (modalImg) {
-        modalImg.src = "";
-    }
-}
-
-
-/* ============================================================
-   ADMIN DEPOSIT STATUS
-   ============================================================ */
-
-async function approveDeposit(id) {
-
-    let dep =
-        db.deposits.find(
-            d =>
-                String(d.id) ===
-                String(id)
-        );
-
-    if (
-        !dep ||
-        dep.status !== "Pending"
-    ) {
-        return;
-    }
-
-    /*
-     * Record-level status update.
-     * Do not overwrite the whole deposits collection.
-     */
-
-    try {
-
-        await updateRecord(
-            "deposits",
-            dep._firebaseKey || dep.id,
-            {
-                status: "Approved",
-                approvedAt: Date.now()
+        async function claimDailySignin() {
+            if (!currentUser) return;
+            let todayStr = new Date().toDateString();
+            if (currentUser.lastSigninDate === todayStr) {
+                alert("You have already claimed today's Daily Sign-in!");
+                return;
             }
-        );
+            let user = getUserByPhone(currentUser.phone);
+            if (!user || !user.uid) return;
+            try {
+                await updateRecord("users", user.uid, {
+                    balance: money(user.balance) + 4,
+                    rechargeBal: money(user.rechargeBal) + 4,
+                    lastSigninDate: todayStr
+                });
+                alert("Congratulations! ₹4 successfully added to your Recharge Balance.");
+            } catch (error) { console.error(error); }
+        }
 
-        alert(
-            "Deposit record marked as approved."
-        );
+        function openVipModal() { document.getElementById("vipStatusModal").classList.remove("hide"); }
+        function closeVipModal() { document.getElementById("vipStatusModal").classList.add("hide"); }
 
-        renderAdminData();
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-async function rejectDeposit(id) {
-
-    let dep =
-        db.deposits.find(
-            d =>
-                String(d.id) ===
-                String(id)
-        );
-
-    if (!dep) return;
-
-    try {
-
-        await updateRecord(
-            "deposits",
-            dep._firebaseKey || dep.id,
-            {
-                status: "Rejected",
-                rejectedAt: Date.now()
+        function switchTab(tabName) {
+            ["viewHome", "viewInvest", "viewTeam", "viewAccount", "viewRecharge", "viewWithdraw"].forEach(id => {
+                document.getElementById(id).classList.add("hide");
+            });
+            if (tabName === "home") {
+                document.getElementById("viewHome").classList.remove("hide");
+            } else if (tabName === "invest") {
+                document.getElementById("viewInvest").classList.remove("hide");
+                renderProducts();
+            } else if (tabName === "team") {
+                document.getElementById("viewTeam").classList.remove("hide");
+                renderTeamData();
+            } else if (tabName === "account") {
+                document.getElementById("viewAccount").classList.remove("hide");
+            } else if (tabName === "recharge") {
+                document.getElementById("viewRecharge").classList.remove("hide");
+            } else if (tabName === "withdraw") {
+                document.getElementById("viewWithdraw").classList.remove("hide");
+                checkBankStatusUI();
+                checkDailyWithdrawLimit();
             }
-        );
+        }
 
-        renderAdminData();
+        function switchInvestSubTab(subTab) {
+            currentInvestSubTab = subTab;
+            ["VIP 1", "VIP 2", "BENEFITS"].forEach((t, index) => {
+                let btnId = "invSubTab" + (index + 1);
+                document.getElementById(btnId).className = (t === subTab) ? "flex-1 py-2 rounded bg-emerald-600 text-white transition text-center text-xs font-semibold" : "flex-1 py-2 rounded text-gray-600 transition text-center text-xs font-semibold";
+            });
+            renderProducts();
+        }
 
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   ADMIN WITHDRAW STATUS
-   ============================================================ */
-
-async function approveWithdraw(id) {
-
-    let wd =
-        db.withdraws.find(
-            w =>
-                String(w.id) ===
-                String(id)
-        );
-
-    if (
-        !wd ||
-        wd.status !== "Pending"
-    ) {
-        return;
-    }
-
-    try {
-
-        await updateRecord(
-            "withdraws",
-            wd._firebaseKey || wd.id,
-            {
-                status: "Completed",
-                approvedAt: Date.now()
+        function renderTeamData() {
+            if (!currentUser) return;
+            let myReferrals = db.users.filter(u => u.referredBy === currentUser.phone);
+            document.getElementById("teamTotalCount").innerText = myReferrals.length;
+            let teamHtml = "";
+            let myTeamComms = db.teamCommissions.filter(c => c.earnerPhone === currentUser.phone);
+            if (myTeamComms.length === 0) {
+                teamHtml = '<p class="text-gray-400 text-center py-2 text-xs">No team deposit records yet.</p>';
+            } else {
+                myTeamComms.forEach(c => {
+                    teamHtml += `<div class="bg-gray-50 p-2.5 rounded text-xs flex justify-between items-center"><div><div class="font-bold">Member: ${escapeHtml(c.memberPhone)}</div></div><span class="font-bold text-emerald-600">+₹${money(c.commissionEarned).toFixed(2)}</span></div>`;
+                });
             }
-        );
+            document.getElementById("teamMembersList").innerHTML = teamHtml;
+        }
 
-        renderAdminData();
-
-        alert(
-            "Withdrawal record marked as completed."
-        );
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-async function rejectWithdraw(id) {
-
-    let wd =
-        db.withdraws.find(
-            w =>
-                String(w.id) ===
-                String(id)
-        );
-
-    if (
-        !wd ||
-        wd.status !== "Pending"
-    ) {
-        return;
-    }
-
-    try {
-
-        await updateRecord(
-            "withdraws",
-            wd._firebaseKey || wd.id,
-            {
-                status: "Rejected",
-                rejectedAt: Date.now()
+        function checkDailyWithdrawLimit() {
+            if (!currentUser) return;
+            let todayStr = new Date().toDateString();
+            if (currentUser.lastWithdrawDate === todayStr) {
+                document.getElementById("submitWithdrawBtn").classList.add("hide");
+                document.getElementById("withdrawLimitMsg").classList.remove("hide");
+            } else {
+                document.getElementById("submitWithdrawBtn").classList.remove("hide");
+                document.getElementById("withdrawLimitMsg").classList.add("hide");
             }
-        );
-
-        renderAdminData();
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   ADMIN PRODUCT CREATE
-   ============================================================ */
-
-async function adminAddProduct() {
-
-    let name =
-        document.getElementById(
-            "newProdName"
-        ).value.trim();
-
-    let price =
-        parseFloat(
-            document.getElementById(
-                "newProdPrice"
-            ).value
-        );
-
-    let daily =
-        parseFloat(
-            document.getElementById(
-                "newProdDaily"
-            ).value
-        );
-
-    let category =
-        document.getElementById(
-            "newProdCategory"
-        ).value;
-
-    let image =
-        document.getElementById(
-            "newProdImage"
-        ).value.trim() ||
-        "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=200";
-
-
-    if (
-        !name ||
-        !price ||
-        !daily
-    ) {
-
-        alert(
-            "Please fill all product fields"
-        );
-
-        return;
-    }
-
-    /*
-     * IMPORTANT:
-     * New product gets its own Firebase child.
-     * It no longer rewrites /products or /.
-     */
-
-    const productId =
-        makeId("PROD");
-
-    const product = {
-
-        id:
-            productId,
-
-        name:
-            name,
-
-        price:
-            price,
-
-        daily:
-            daily,
-
-        category:
-            category,
-
-        image:
-            image,
-
-        createdAt:
-            Date.now()
-    };
-
-    try {
-
-        await saveRecord(
-            "products",
-            productId,
-            product
-        );
-
-        document.getElementById(
-            "newProdName"
-        ).value = "";
-
-        document.getElementById(
-            "newProdPrice"
-        ).value = "";
-
-        document.getElementById(
-            "newProdDaily"
-        ).value = "";
-
-        document.getElementById(
-            "newProdImage"
-        ).value = "";
-
-        alert(
-            "Product published successfully in " +
-            category +
-            "!"
-        );
-
-        renderAdminData();
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   ADMIN PRODUCT DELETE
-   ============================================================ */
-
-async function adminDeleteProduct(id) {
-
-    let product =
-        db.products.find(
-            p =>
-                String(p.id) ===
-                String(id)
-        );
-
-    if (!product) return;
-
-    let key =
-        product._firebaseKey ||
-        product.id;
-
-    try {
-
-        await deleteRecord(
-            "products",
-            key
-        );
-
-        renderAdminData();
-
-    } catch (error) {
-        console.error(error);
-    }
-}
-
-
-/* ============================================================
-   FORGOT PASSWORD
-   ============================================================ */
-
-function showForgotPasswordModal() {
-
-    document
-        .getElementById(
-            "forgotPasswordModal"
-        )
-        .classList
-        .remove("hide");
-}
-
-
-function sendForgotOTP() {
-
-    let phone =
-        document.getElementById(
-            "forgotPhone"
-        ).value.trim();
-
-    let u =
-        getUserByPhone(phone);
-
-    if (!u) {
-
-        alert(
-            "Mobile number not registered"
-        );
-
-        return;
-    }
-
-    alert(
-        "Password reset OTP sent: 9876"
-    );
-
-    document.getElementById(
-        "forgotOtp"
-    ).value = "9876";
-}
-
-
-async function executePasswordReset() {
-
-    let phone =
-        document.getElementById(
-            "forgotPhone"
-        ).value.trim();
-
-    let otp =
-        document.getElementById(
-            "forgotOtp"
-        ).value.trim();
-
-    let newPass =
-        document.getElementById(
-            "forgotNewPassword"
-        ).value;
-
-    if (otp !== "9876") {
-
-        alert("Invalid OTP");
-        return;
-    }
-
-    if (!newPass) {
-
-        alert(
-            "Please enter a new password."
-        );
-
-        return;
-    }
-
-    let u =
-        getUserByPhone(phone);
-
-    if (!u || !u.uid) {
-
-        alert(
-            "User record not found."
-        );
-
-        return;
-    }
-
-    try {
-
-        await updateRecord(
-            "users",
-            u.uid,
-            {
-                password: newPass
+        }
+
+        function setRechargeAmount(amt) { document.getElementById("rechargeInputAmount").value = amt; }
+
+        let currentDepositAmount = 0;
+        function proceedToPaymentGateway() {
+            let amt = parseFloat(document.getElementById("rechargeInputAmount").value);
+            if (!amt || amt < 100 || amt > 100000) {
+                alert("Deposit limit is ₹100 to ₹1,00,000");
+                return;
             }
-        );
+            currentDepositAmount = amt;
+            let assignedUpi = ROTATING_UPIS[Math.floor(Math.random() * ROTATING_UPIS.length)];
+            document.getElementById("assignedUpiText").innerText = assignedUpi;
+            let upiLink = `upi://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
+            document.getElementById("paytmAppBtn").href = `paytmmp://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
+            document.getElementById("phonepeAppBtn").href = `phonepe://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
+            document.getElementById("gpayAppBtn").href = `tez://upi/pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
+            document.getElementById("mobikwikAppBtn").href = upiLink;
+            document.getElementById("paymentModal").classList.remove("hide");
+            startPaymentTimer(12 * 60);
+        }
 
-        alert(
-            "Password updated successfully!"
-        );
+        function startPaymentTimer(duration) {
+            let timer = duration;
+            if (activeTimerInterval) clearInterval(activeTimerInterval);
+            activeTimerInterval = setInterval(() => {
+                let m = parseInt(timer / 60, 10);
+                let s = parseInt(timer % 60, 10);
+                m = m < 10 ? "0" + m : m;
+                s = s < 10 ? "0" + s : s;
+                document.getElementById("paymentTimer").innerText = m + ":" + s;
+                if (--timer < 0) {
+                    clearInterval(activeTimerInterval);
+                    closePaymentModal();
+                }
+            }, 1000);
+        }
 
-        document
-            .getElementById(
-                "forgotPasswordModal"
-            )
-            .classList
-            .add("hide");
+        function closePaymentModal() {
+            if (activeTimerInterval) clearInterval(activeTimerInterval);
+            document.getElementById("paymentModal").classList.add("hide");
+        }
 
-    } catch (error) {
-        console.error(error);
-    }
-}
+        function submitPaymentProof() {
+            let utr = document.getElementById("paymentUtrInput").value.trim();
+            let screenshotFile = document.getElementById("paymentScreenshotInput").files[0];
+            if (!utr || !/^\d{12}$/.test(utr)) {
+                alert("Please enter a valid 12-digit numeric UTR!");
+                return;
+            }
+            if (!screenshotFile) {
+                alert("Please upload the payment screenshot!");
+                return;
+            }
+            let reader = new FileReader();
+            reader.onload = async function(e) {
+                let depositId = makeId("DEP");
+                let newDep = {
+                    id: depositId,
+                    phone: currentUser.phone,
+                    userUid: currentUser.uid || null,
+                    userName: currentUser.name || "User_" + currentUser.phone.slice(-4),
+                    amount: currentDepositAmount,
+                    utr: utr,
+                    screenshot: screenshotFile.name,
+                    screenshotUrl: e.target.result,
+                    status: "Pending",
+                    date: new Date().toLocaleString(),
+                    createdAt: Date.now()
+                };
+                try {
+                    await saveRecord("deposits", depositId, newDep);
+                    document.getElementById("rechargeInputAmount").value = "";
+                    document.getElementById("paymentUtrInput").value = "";
+                    document.getElementById("paymentScreenshotInput").value = "";
+                    closePaymentModal();
+                    alert("Proof submitted successfully!");
+                    renderUserHistory();
+                } catch (error) { console.error(error); }
+            };
+            reader.readAsDataURL(screenshotFile);
+        }
 
+        function checkBankStatusUI() {
+            if (!currentUser) return;
+            if (currentUser.bank) {
+                document.getElementById("bankDetailsCard").classList.add("hide");
+                document.getElementById("withdrawFormCard").classList.remove("hide");
+                document.getElementById("savedBankName").innerText = currentUser.bank.name;
+                document.getElementById("savedBankAcc").innerText = currentUser.bank.acc;
+                document.getElementById("savedBankIfsc").innerText = currentUser.bank.ifsc;
+            } else {
+                document.getElementById("bankDetailsCard").classList.remove("hide");
+                document.getElementById("withdrawFormCard").classList.add("hide");
+            }
+        }
 
-/* ============================================================
-   PERIODIC CHECK
-   ============================================================ */
+        async function saveBankDetails() {
+            if (!currentUser) return;
+            let name = document.getElementById("bankHolderName").value.trim();
+            let acc = document.getElementById("bankAccNo").value.trim();
+            let ifsc = document.getElementById("bankIfsc").value.trim();
+            if (!name || !acc || !ifsc) {
+                alert("Please fill all bank details");
+                return;
+            }
+            let user = getUserByPhone(currentUser.phone);
+            if (!user || !user.uid) return;
+            try {
+                await updateRecord("users", user.uid, {
+                    bank: { name, acc, ifsc },
+                    name: name
+                });
+                alert("Bank details saved successfully!");
+                checkBankStatusUI();
+            } catch (error) { console.error(error); }
+        }
 
-/*
- * This keeps expired offers hidden/processed while a page is open.
- *
- * It is NOT a trusted server scheduler.
- * For actual automatic 24-hour financial settlement, use a
- * server-side scheduled function/backend.
- */
+        async function submitWithdrawRequest() {
+            if (!currentUser) return;
+            let amt = parseFloat(document.getElementById("withdrawInputAmount").value);
+            if (!amt || amt < 100) {
+                alert("Minimum withdrawal is ₹100");
+                return;
+            }
+            if (amt > money(currentUser.withdrawBal)) {
+                alert("Insufficient withdrawable balance!");
+                return;
+            }
+            let tax = amt * 0.12;
+            let netAmt = amt - tax;
+            let withdrawalId = makeId("WD");
+            let user = getUserByPhone(currentUser.phone);
+            if (!user || !user.uid) return;
+            let newWd = {
+                id: withdrawalId,
+                phone: user.phone,
+                userUid: user.uid,
+                userName: user.name || "User",
+                amount: amt,
+                netAmount: netAmt,
+                tax: tax,
+                bankInfo: user.bank,
+                status: "Pending",
+                date: new Date().toLocaleString(),
+                createdAt: Date.now()
+            };
+            try {
+                await saveRecord("withdraws", withdrawalId, newWd);
+                alert("Withdrawal request submitted successfully.");
+                document.getElementById("withdrawInputAmount").value = "";
+                renderUserHistory();
+            } catch (error) { console.error(error); }
+        }
 
-setInterval(() => {
+        function renderUserHistory() {
+            if (!currentUser) return;
+            let depHtml = "";
+            let myDeps = db.deposits.filter(d => d.phone === currentUser.phone);
+            myDeps.forEach(d => {
+                depHtml += `<div class="bg-gray-50 p-2.5 rounded text-xs flex justify-between items-center"><div><div class="font-bold">₹${money(d.amount)}</div><div class="text-[10px] text-gray-400">UTR: ${escapeHtml(d.utr)}</div></div><span class="font-bold">${escapeHtml(d.status)}</span></div>`;
+            });
+            if (document.getElementById("userRechargeHistory")) {
+                document.getElementById("userRechargeHistory").innerHTML = depHtml || '<p class="text-gray-400 text-xs">No records.</p>';
+            }
+            let wdHtml = "";
+            let myWds = db.withdraws.filter(w => w.phone === currentUser.phone);
+            myWds.forEach(w => {
+                wdHtml += `<div class="bg-gray-50 p-2.5 rounded text-xs flex justify-between items-center"><div><div class="font-bold">₹${money(w.amount)}</div><div class="text-[10px] text-gray-400">Net: ₹${money(w.netAmount).toFixed(2)}</div></div><span class="font-bold">${escapeHtml(w.status)}</span></div>`;
+            });
+            if (document.getElementById("userWithdrawHistory")) {
+                document.getElementById("userWithdrawHistory").innerHTML = wdHtml || '<p class="text-gray-400 text-xs">No records.</p>';
+            }
+        }
 
-    if (firebaseLoaded) {
-        checkProductExpiries();
-    }
+        function renderProducts() {
+            if (!currentUser) return;
+            let prodHtml = "";
+            let filteredProducts = db.products.filter(p => (p.category || "VIP 1") === currentInvestSubTab);
+            filteredProducts.forEach(p => {
+                let already = db.investments.some(inv => inv.phone === currentUser.phone && String(inv.productId) === String(p.id));
+                prodHtml += `<div class="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3 text-xs"><div class="flex-1"><div class="font-bold">${escapeHtml(p.name)}</div><div class="text-emerald-600 font-semibold">Price: ₹${money(p.price)} | Return: ₹${money(p.daily)}</div></div><button onclick="investProduct('${escapeHtml(String(p.id))}', ${money(p.price)}, ${money(p.daily)})" class="${already ? 'bg-gray-400' : 'bg-emerald-600'} text-white px-3 py-1.5 rounded-lg font-semibold" ${already ? 'disabled' : ''}>${already ? 'Purchased' : 'Invest'}</button></div>`;
+            });
+            document.getElementById("productListContainer").innerHTML = prodHtml || `<p class="text-gray-400 text-center py-4 text-xs">No products.</p>`;
+        }
 
-}, 60 * 1000);
+        async function investProduct(id, price, returnAmount) {
+            if (!currentUser) return;
+            let investmentId = makeId("INV");
+            let newInv = {
+                id: investmentId,
+                phone: currentUser.phone,
+                userUid: currentUser.uid || null,
+                productId: id,
+                price: money(price),
+                returnAmount: money(returnAmount),
+                maturityTime: Date.now() + 24 * 60 * 60 * 1000,
+                matured: false,
+                createdAt: Date.now()
+            };
+            try {
+                await saveRecord("investments", investmentId, newInv);
+                alert("Investment record created successfully.");
+                renderProducts();
+            } catch (error) { console.error(error); }
+        }
 
+        function openAdminPanel() {
+            document.getElementById("adminPanelModal").classList.remove("hide");
+            renderAdminData();
+        }
 
-/* ============================================================
-   ERROR LOGGING
-   ============================================================ */
+        function closeAdminPanel() {
+            document.getElementById("adminPanelModal").classList.add("hide");
+            if (currentUser && currentUser.phone !== ADMIN_PHONE) showDashboard();
+        }
 
-window.addEventListener(
-    "unhandledrejection",
-    event => {
-        console.error(
-            "Unhandled Firebase/app error:",
-            event.reason
-        );
-    }
-);
+        function switchAdminTab(tab) {
+            ["users", "deposits", "withdraws", "products"].forEach(t => {
+                let sec = document.getElementById("adminSection" + t.charAt(0).toUpperCase() + t.slice(1));
+                if (sec) sec.classList.add("hide");
+            });
+            document.getElementById("adminSection" + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove("hide");
+        }
 
+        function renderAdminData() {
+            let uHtml = "";
+            db.users.forEach(u => {
+                uHtml += `<div class="bg-gray-800 p-2.5 rounded text-xs space-y-1"><div>Phone: ${escapeHtml(u.phone)} | Bal: ₹${money(u.balance)}</div></div>`;
+            });
+            if (document.getElementById("adminUsersList")) document.getElementById("adminUsersList").innerHTML = uHtml || '<p class="text-gray-400">No users</p>';
+            
+            let dHtml = "";
+            db.deposits.forEach(d => {
+                dHtml += `<div class="bg-gray-800 p-3 rounded text-xs space-y-1"><div>User: ${escapeHtml(d.phone)} - ₹${money(d.amount)}</div><div>UTR: ${escapeHtml(d.utr)} | Status: ${escapeHtml(d.status)}</div>${d.status === 'Pending' ? `<button onclick="approveDeposit('${d.id}')" class="bg-emerald-600 px-2 py-1 rounded font-bold mr-1">Approve</button><button onclick="rejectDeposit('${d.id}')" class="bg-red-600 px-2 py-1 rounded font-bold">Reject</button>` : ''}</div>`;
+            });
+            if (document.getElementById("adminDepositsList")) document.getElementById("adminDepositsList").innerHTML = dHtml || '<p class="text-gray-400">No deposits</p>';
+
+            let wHtml = "";
+            db.withdraws.forEach(w => {
+                wHtml += `<div class="bg-gray-800 p-3 rounded text-xs space-y-1"><div>User: ${escapeHtml(w.phone)} - ₹${money(w.amount)}</div><div>Status: ${escapeHtml(w.status)}</div>${w.status === 'Pending' ? `<button onclick="approveWithdraw('${w.id}')" class="bg-emerald-600 px-2 py-1 rounded font-bold mr-1">Approve</button><button onclick="rejectWithdraw('${w.id}')" class="bg-red-600 px-2 py-1 rounded font-bold">Reject</button>` : ''}</div>`;
+            });
+            if (document.getElementById("adminWithdrawsList")) document.getElementById("adminWithdrawsList").innerHTML = wHtml || '<p class="text-gray-400">No withdrawals</p>';
+
+            let pHtml = "";
+            db.products.forEach(p => {
+                pHtml += `<div class="bg-gray-800 p-2.5 rounded text-xs flex justify-between items-center"><div>${escapeHtml(p.name)} - ₹${money(p.price)}</div><button onclick="adminDeleteProduct('${p.id}')" class="text-red-400 font-bold">Delete</button></div>`;
+            });
+            if (document.getElementById("adminProductsList")) document.getElementById("adminProductsList").innerHTML = pHtml || '<p class="text-gray-400">No products</p>';
+        }
+
+        function openImagePreview(url) {
+            document.getElementById("previewModalImg").src = url;
+            document.getElementById("imagePreviewModal").classList.remove("hide");
+        }
+        function closeImagePreview() { document.getElementById("imagePreviewModal").classList.add("hide"); }
+
+        async function approveDeposit(id) {
+            let dep = db.deposits.find(d => String(d.id) === String(id));
+            if (!dep) return;
+            await updateRecord("deposits", dep._firebaseKey || dep.id, { status: "Approved" });
+            renderAdminData();
+        }
+        async function rejectDeposit(id) {
+            let dep = db.deposits.find(d => String(d.id) === String(id));
+            if (!dep) return;
+            await updateRecord("deposits", dep._firebaseKey || dep.id, { status: "Rejected" });
+            renderAdminData();
+        }
+        async function approveWithdraw(id) {
+            let wd = db.withdraws.find(w => String(w.id) === String(id));
+            if (!wd) return;
+            await updateRecord("withdraws", wd._firebaseKey || wd.id, { status: "Completed" });
+            renderAdminData();
+        }
+        async function rejectWithdraw(id) {
+            let wd = db.withdraws.find(w => String(w.id) === String(id));
+            if (!wd) return;
+            await updateRecord("withdraws", wd._firebaseKey || wd.id, { status: "Rejected" });
+            renderAdminData();
+        }
+
+        async function adminAddProduct() {
+            let name = document.getElementById("newProdName").value.trim();
+            let price = parseFloat(document.getElementById("newProdPrice").value);
+            let daily = parseFloat(document.getElementById("newProdDaily").value);
+            let category = document.getElementById("newProdCategory").value;
+            let image = document.getElementById("newProdImage").value.trim() || "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=200";
+            if (!name || !price || !daily) { alert("Fill all fields"); return; }
+            let productId = makeId("PROD");
+            let product = { id: productId, name, price, daily, category, image, createdAt: Date.now() };
+            await saveRecord("products", productId, product);
+            document.getElementById("newProdName").value = "";
+            document.getElementById("newProdPrice").value = "";
+            document.getElementById("newProdDaily").value = "";
+            document.getElementById("newProdImage").value = "";
+            alert("Product published!");
+            renderAdminData();
+        }
+
+        async function adminDeleteProduct(id) {
+            let product = db.products.find(p => String(p.id) === String(id));
+            if (!product) return;
+            await deleteRecord("products", product._firebaseKey || product.id);
+            renderAdminData();
+        }
+
+        function showForgotPasswordModal() { document.getElementById("forgotPasswordModal").classList.remove("hide"); }
+        function sendForgotOTP() {
+            let phone = document.getElementById("forgotPhone").value.trim();
+            if (!getUserByPhone(phone)) { alert("Number not registered"); return; }
+            alert("OTP sent: 9876");
+            document.getElementById("forgotOtp").value = "9876";
+        }
+        async function executePasswordReset() {
+            let phone = document.getElementById("forgotPhone").value.trim();
+            let otp = document.getElementById("forgotOtp").value.trim();
+            let newPass = document.getElementById("forgotNewPassword").value;
+            if (otp !== "9876") { alert("Invalid OTP"); return; }
+            let u = getUserByPhone(phone);
+            if (!u || !u.uid) return;
+            await updateRecord("users", u.uid, { password: newPass });
+            alert("Password updated!");
+            document.getElementById("forgotPasswordModal").classList.add("hide");
+        }
     </script>
+</body>
+</html>
