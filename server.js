@@ -194,7 +194,6 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: true,
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
@@ -208,21 +207,21 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log('[WHATSAPP] QR Code generated successfully. Scan if needed.');
+            console.log('[WHATSAPP] QR Code generated successfully.');
         }
 
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect);
+            console.log('Connection closed, reconnecting:', shouldReconnect);
             if (shouldReconnect) {
-                connectToWhatsApp();
+                setTimeout(() => connectToWhatsApp(), 5000);
             }
         } else if (connection === 'open') {
             console.log('[WHATSAPP] Connected successfully to WhatsApp!');
         }
     });
 
-    // Pairing code request handled safely after socket initialization
+    // Pairing code safe request after proper delay
     const pairingNumber = "917071088675";
     if (pairingNumber && !sock.authState.creds.registered) {
         setTimeout(async () => {
@@ -232,7 +231,7 @@ async function connectToWhatsApp() {
             } catch (err) {
                 console.error('[PAIRING CODE ERROR]', err);
             }
-        }, 8000);
+        }, 10000);
     }
 }
 
