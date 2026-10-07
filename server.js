@@ -1991,5 +1991,5 @@ app.post('/admin/send-message', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    cout(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
