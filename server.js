@@ -207,7 +207,7 @@ async function connectToWhatsApp() {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) {
-            console.log('[WHATSAPP] QR Code received. Scan if needed, or OTP simulation fallback is ready.');
+            console.log('[WHATSAPP] QR Code generated successfully.');
         }
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -1899,7 +1899,7 @@ app.post('/admin/action-deposit', (req, res) => {
                             id: 'notif_' + Date.now(),
                             user_id: referrer.uid,
                             title: 'Referral Bonus Received',
-                            message: `You received a 1% referral deposit bonus of ₹${bonus.fontWeight ? bonus.fontWeight() : bonus.toFixed(2)} from UID: ${user.uid}`,
+                            message: `You received a 1% referral deposit bonus of ₹${bonus.toFixed(2)} from UID: ${user.uid}`,
                             is_read: false,
                             created_at: new Date().toISOString()
                         });
@@ -1965,7 +1965,7 @@ app.post('/admin/send-message', (req, res) => {
         user.notifications.push({
             id: 'notif_' + Date.now(),
             user_id: user.uid,
-            title: 'System Notification',
+            title: 'SystemNotification',
             message: message,
             is_read: false,
             created_at: new Date().toISOString()
