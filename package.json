@@ -1,0 +1,17 @@
+{
+  "name": "earnxpro",
+  "version": "1.0.0",
+  "description": "EarnX Pro Financial Platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.3.1",
+    "multer": "^1.4.5-lts.1",
+    "pino": "^8.20.0",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
