@@ -5,9 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal');
+const readline = require('readline');
 
 const app = express();
 const PORT = 7700;
@@ -187,26 +187,43 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection Variable (Baileys Integration)
+// WhatsApp Socket Connection Variable (Baileys Pairing Code Integration)
 let sock = null;
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: true,
-        logger: pino({ level: 'silent' })
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
+        },
+        browser: ["Chrome (Linux)", "", ""]
     });
+
+    if (!sock.authState.creds.registered) {
+        // Aap yahan apna WhatsApp number seedha bhi daal sakte hain ya Render logs se enter kar sakte hain
+        const phoneNumber = await question('Apna WhatsApp Number daalein (Country code ke sath, e.g., 91xxxxxxxxxx): ');
+        setTimeout(async () => {
+            try {
+                let code = await sock.requestPairingCode(phoneNumber.trim());
+                console.log(`\n========================================`);
+                console.log(`AAPKA PAIRING CODE YAH HAI: ${code}`);
+                console.log(`========================================\n`);
+            } catch (err) {
+                console.error('Error getting pairing code:', err);
+            }
+        }, 3000);
+    }
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        if (qr) {
-            console.log('[WHATSAPP] Scan this QR code using your WhatsApp linked devices:');
-            qrcode.generate(qr, { small: true });
-        }
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect);
@@ -214,7 +231,7 @@ async function connectToWhatsApp() {
                 connectToWhatsApp();
             }
         } else if (connection === 'open') {
-            console.log('[WHATSAPP] Connected successfully to WhatsApp!');
+            console.log('[WHATSAPP] Connected successfully via Pairing Code!');
         }
     });
 }
@@ -907,7 +924,7 @@ app.get('/team', (req, res) => {
     let db = readDB();
     let currentUser = db.users.find(u => u.username === req.session.user.username);
 
-    const referralLink = `http://localhost:${PORT}/signup?ref=${currentUser.uid}`;
+    const referralLink = `https://earnxpro-1.onrender.com/signup?ref=${currentUser.uid}`;
 
     const content = `
         <div class="space-y-6">
