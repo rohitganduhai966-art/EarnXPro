@@ -186,7 +186,7 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection Variable (Baileys Integration Fixed for Render)
+// WhatsApp Socket Connection with QR and Pairing Code Support
 let sock = null;
 
 async function connectToWhatsApp() {
@@ -204,11 +204,27 @@ async function connectToWhatsApp() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
+        
         if (qr) {
-            console.log('[WHATSAPP] QR Code generated successfully.');
+            console.log('[WHATSAPP] QR Code generated successfully. Scan if needed.');
         }
+
+        // Aapka number yahan configure kar diya gaya hai pairing code ke liye
+        const pairingNumber = "917071088675"; 
+
+        if (pairingNumber && !sock.authState.creds.registered) {
+            setTimeout(async () => {
+                try {
+                    let code = await sock.requestPairingCode(pairingNumber);
+                    console.log(`[WHATSAPP PAIRING CODE] Your Pairing Code is: ${code}`);
+                } catch (err) {
+                    console.error('[PAIRING CODE ERROR]', err);
+                }
+            }, 5000);
+        }
+
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect);
