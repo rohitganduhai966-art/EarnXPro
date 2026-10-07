@@ -211,20 +211,6 @@ async function connectToWhatsApp() {
             console.log('[WHATSAPP] QR Code generated successfully. Scan if needed.');
         }
 
-        // Aapka number yahan configure kar diya gaya hai pairing code ke liye
-        const pairingNumber = "917071088675"; 
-
-        if (pairingNumber && !sock.authState.creds.registered) {
-            setTimeout(async () => {
-                try {
-                    let code = await sock.requestPairingCode(pairingNumber);
-                    console.log(`[WHATSAPP PAIRING CODE] Your Pairing Code is: ${code}`);
-                } catch (err) {
-                    console.error('[PAIRING CODE ERROR]', err);
-                }
-            }, 5000);
-        }
-
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect);
@@ -235,6 +221,19 @@ async function connectToWhatsApp() {
             console.log('[WHATSAPP] Connected successfully to WhatsApp!');
         }
     });
+
+    // Pairing code request handled safely after socket initialization
+    const pairingNumber = "917071088675";
+    if (pairingNumber && !sock.authState.creds.registered) {
+        setTimeout(async () => {
+            try {
+                let code = await sock.requestPairingCode(pairingNumber);
+                console.log(`[WHATSAPP PAIRING CODE] Your Pairing Code is: ${code}`);
+            } catch (err) {
+                console.error('[PAIRING CODE ERROR]', err);
+            }
+        }, 8000);
+    }
 }
 
 // Start WhatsApp connection on server boot
@@ -1992,5 +1991,5 @@ app.post('/admin/send-message', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    cout(`Server is running on http://localhost:${PORT}`);
 });
