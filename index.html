@@ -1,1450 +1,1978 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EarnX Pro - Advanced Investment Platform</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+const express = require('express');
+const bodyParser = require('body-parser');
+const session = require('express-session');
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+const mongoose = require('mongoose');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const qrcode = require('qrcode-terminal');
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
-        .hide { display: none !important; }
-    </style>
-</head>
-<body class="bg-gray-100 text-gray-800 min-h-screen flex flex-col justify-between">
+const app = express();
+const PORT = 7700;
 
-    <!-- MAIN APP CONTAINER -->
-    <div id="appContainer" class="max-w-md mx-auto bg-white min-h-screen shadow-xl relative pb-20">
+// MongoDB Atlas Connection Setup
+const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
-        <!-- AUTH SCREEN -->
-        <div id="authScreen" class="p-6">
-            <div class="text-center my-8">
-                <div class="inline-block bg-emerald-500 text-white p-4 rounded-full text-3xl mb-3 shadow-lg">
-                    <i class="fa-solid fa-chart-line"></i>
-                </div>
-                <h1 class="text-2xl font-bold text-gray-900">EarnX Pro</h1>
-                <p class="text-sm text-gray-500">Secure P2P Investment Platform</p>
-            </div>
+mongoose.connect(MONGO_URI)
+    .then(() => console.log('MongoDB Connected Successfully'))
+    .catch(err => console.error('MongoDB Connection Error:', err));
 
-            <!-- Tabs -->
-            <div class="flex bg-gray-200 rounded-lg p-1 mb-6">
-                <button onclick="switchAuthTab('login')" id="loginTabBtn" class="flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition">Login</button>
-                <button onclick="switchAuthTab('signup')" id="signupTabBtn" class="flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition">Sign Up</button>
-            </div>
+const DB_FILE = path.join(__dirname, 'database.json');
 
-            <!-- Login Form -->
-            <div id="loginFormContainer" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Mobile Number</label>
-                    <input type="text" id="loginPhone" placeholder="Enter mobile number" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Password</label>
-                    <input type="password" id="loginPassword" placeholder="Enter password" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm">
-                </div>
-                <div class="flex justify-end">
-                    <button onclick="showForgotPasswordModal()" class="text-xs text-emerald-600 font-medium hover:underline">Forgot Password?</button>
-                </div>
-                <button onclick="handleLogin()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg shadow-md transition text-sm">Login Now</button>
-            </div>
+// List of Rotating UPI IDs for Deposits
+const ROTATING_UPI_IDS = [
+    'Rohit.m820@ptaxis',
+    '6377833820-3@ibl',
+    '6377833820-2.wallet@phonepe',
+    '7071088675@mbk',
+    '7071088675@mbkns',
+    '7071088675-3@ybl',
+    'rubeena.rashid@ptyes'
+];
 
-            <!-- Signup Form -->
-            <div id="signupFormContainer" class="space-y-4 hide">
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Mobile Number</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="signupPhone" placeholder="Enter mobile number" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm">
-                        <button onclick="sendSignupOTP()" class="bg-gray-800 text-white px-4 rounded-lg text-xs font-medium whitespace-nowrap">Get OTP</button>
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Enter OTP</label>
-                    <input type="text" id="signupOtp" placeholder="Enter 4-digit OTP" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Password</label>
-                    <input type="password" id="signupPassword" placeholder="Create password" class="w-full px-4 py-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm">
-                </div>
-                <div class="bg-emerald-50 p-2 rounded text-[11px] text-emerald-800 font-medium">
-                    Referral Code / Inviter ID: <span id="signupRefDisplay" class="font-bold">None</span>
-                </div>
-                <button onclick="handleSignup()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg shadow-md transition text-sm">Register Account</button>
-            </div>
-        </div>
+function getRandomUpiId() {
+    const randomIndex = Math.floor(Math.random() * ROTATING_UPI_IDS.length);
+    return ROTATING_UPI_IDS[randomIndex];
+}
 
-        <!-- MAIN DASHBOARD -->
-        <div id="dashboardScreen" class="hide flex flex-col min-h-screen pb-16">
-            
-            <!-- Top Header -->
-            <div class="bg-emerald-600 text-white px-4 py-3 flex justify-between items-center shadow-md">
-                <div class="flex items-center gap-2">
-                    <div class="w-9 h-9 rounded-full bg-white text-emerald-600 flex items-center justify-center font-bold text-lg shadow">🍎</div>
-                    <div>
-                        <div id="headerUsername" class="font-bold text-sm">User</div>
-                        <div class="text-[10px] text-emerald-100">ID: <span id="headerUserId">153124</span></div>
-                    </div>
-                </div>
-                <div class="flex items-center gap-3">
-                    <a href="https://t.me/+byjidIDYoqZiNzll" target="_blank" class="w-8 h-8 rounded-full bg-emerald-700 flex items-center justify-center text-white text-sm shadow"><i class="fa-solid fa-headset"></i></a>
-                </div>
-            </div>
+// Ensure uploads directory exists for screenshots
+const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
-            <!-- Content Area Views -->
-            <div id="tabContent" class="flex-1">
-                
-                <!-- HOME TAB -->
-                <div id="viewHome" class="p-4 space-y-4">
-                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-3 shadow-sm">
-                        <i class="fa-solid fa-bullhorn text-amber-500 text-lg"></i>
-                        <div class="text-xs text-amber-800">
-                            <span class="font-bold">Official Release:</span> Join our official channel for updates!
-                            <a href="https://t.me/xNekWyb88xtmNThl" target="_blank" class="text-emerald-600 font-bold underline block mt-0.5">Open Telegram Channel</a>
-                        </div>
-                    </div>
+// Correct calculation logic for updating balances or order completion
+function calculateOrderRevenue(principalAmount, revenueRatePercent) {
+    const rate = revenueRatePercent / 100;
+    const profit = principalAmount * rate;
+    const totalReturn = principalAmount + profit;
+    return { profit, totalReturn };
+}
 
-                    <!-- Action Grid -->
-                    <div class="grid grid-cols-5 gap-2 bg-white p-3 rounded-xl shadow-sm text-center">
-                        <button onclick="switchTab('recharge')" class="flex flex-col items-center gap-1">
-                            <div class="w-12 h-12 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center text-lg"><i class="fa-solid fa-wallet"></i></div>
-                            <span class="text-[11px] font-medium text-gray-700">Recharge</span>
-                        </button>
-                        <button onclick="switchTab('withdraw')" class="flex flex-col items-center gap-1">
-                            <div class="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-lg"><i class="fa-solid fa-money-bill-transfer"></i></div>
-                            <span class="text-[11px] font-medium text-gray-700">Withdraw</span>
-                        </button>
-                        <button onclick="claimDailySignin()" class="flex flex-col items-center gap-1">
-                            <div class="w-12 h-12 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-lg"><i class="fa-solid fa-calendar-check"></i></div>
-                            <span class="text-[11px] font-medium text-gray-700">Daily Signin</span>
-                        </button>
-                        <button onclick="switchTab('team')" class="flex flex-col items-center gap-1">
-                            <div class="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-lg"><i class="fa-solid fa-users"></i></div>
-                            <span class="text-[11px] font-medium text-gray-700">Team</span>
-                        </button>
-                        <a href="https://t.me/xNekWyb88xtmNThl" target="_blank" class="flex flex-col items-center gap-1">
-                            <div class="w-12 h-12 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center text-lg"><i class="fa-brands fa-telegram"></i></div>
-                            <span class="text-[11px] font-medium text-gray-700">Telegram</span>
-                        </a>
-                    </div>
+// UTR validation function updated to exact 12-digit numeric format
+function validateUTR(utr) {
+    const utrRegex = /^[0-9]{12}$/;
+    return utrRegex.test(utr);
+}
 
-                    <!-- Company About & Highlights -->
-                    <div class="bg-white rounded-xl p-4 shadow-sm space-y-3">
-                        <div class="flex items-center gap-2 border-b pb-2">
-                            <div class="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-xs shadow">
-                                <i class="fa-solid fa-building-shield"></i>
-                            </div>
-                            <h3 class="font-bold text-sm text-gray-900">About EarnX Pro Enterprise</h3>
-                        </div>
-                        <p class="text-xs text-gray-600 leading-relaxed">
-                            EarnX Pro is a globally recognized financial growth ecosystem engineered to deliver robust digital asset management, transparent P2P transactions, and high-yield investment structures backed by advanced algorithmic market analysis.
-                        </p>
-                        <div class="grid grid-cols-2 gap-2 pt-1 text-xs">
-                            <div class="bg-emerald-50 p-2.5 rounded-lg border border-emerald-100 space-y-1">
-                                <div class="font-bold text-emerald-800"><i class="fa-solid fa-bolt mr-1"></i> Instant Settlement</div>
-                                <div class="text-[10px] text-gray-600">Automated ledger processing ensures lightning-fast deposits and secure 24-hour payouts.</div>
-                            </div>
-                            <div class="bg-teal-50 p-2.5 rounded-lg border border-teal-100 space-y-1">
-                                <div class="font-bold text-teal-800"><i class="fa-solid fa-shield-cat mr-1"></i> Bank-Grade Security</div>
-                                <div class="text-[10px] text-gray-600">Advanced cryptographic protocols safeguarding your capital and personal credentials 24/7.</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-100 rounded-2xl p-4 shadow-sm space-y-3">
-                        <div class="flex items-center gap-2">
-                            <div class="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-sm shadow">
-                                <i class="fa-solid fa-award"></i>
-                            </div>
-                            <h3 class="font-bold text-sm text-emerald-900">Our Core Vision & Mission</h3>
-                        </div>
-                        <p class="text-xs text-gray-600 leading-relaxed">
-                            We empower everyday investors by offering structured VIP tiers, lucrative multi-level team commissions (up to 4%), and transparent daily returns. Join thousands of satisfied users scaling financial freedom with EarnX Pro today.
-                        </p>
-                    </div>
-                </div>
-
-                <!-- INVEST TAB -->
-                <div id="viewInvest" class="p-4 space-y-4 hide">
-                    <div class="flex bg-white rounded-lg p-1 shadow-sm text-xs font-semibold">
-                        <button onclick="switchInvestSubTab('VIP 1')" id="invSubTab1" class="flex-1 py-2 rounded bg-emerald-600 text-white transition text-center">VIP 1</button>
-                        <button onclick="switchInvestSubTab('VIP 2')" id="invSubTab2" class="flex-1 py-2 rounded text-gray-600 transition text-center">VIP 2</button>
-                        <button onclick="switchInvestSubTab('BENEFITS')" id="invSubTab3" class="flex-1 py-2 rounded text-gray-600 transition text-center">BENEFITS</button>
-                    </div>
-                    <div id="productListContainer" class="space-y-3"></div>
-                </div>
-
-                <!-- TEAM TAB -->
-                <div id="viewTeam" class="p-4 space-y-4 hide">
-                    <div class="bg-white rounded-xl p-4 shadow-sm space-y-3">
-                        <div class="flex justify-between items-center border-b pb-2">
-                            <h3 class="font-bold text-sm text-gray-900"><i class="fa-solid fa-gift text-emerald-500 mr-1.5"></i> Referral & Invite Center</h3>
-                        </div>
-                        <div class="bg-gray-50 p-3 rounded-lg space-y-2">
-                            <div class="text-xs font-bold text-gray-800">Your Unique Invite Link</div>
-                            <div class="flex gap-2">
-                                <input type="text" id="userUniqueInviteLink" readonly class="w-full px-2 py-1.5 bg-white border rounded text-[11px] text-gray-600">
-                                <button onclick="copyUniqueInviteLink()" class="bg-emerald-600 text-white px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap">Copy Link</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                        <h3 class="font-bold text-sm text-gray-900"><i class="fa-solid fa-users text-emerald-600 mr-1"></i> My Team & Commission Stats</h3>
-                        <div class="grid grid-cols-2 gap-2 text-xs">
-                            <div class="bg-emerald-50 p-3 rounded-lg">
-                                <div class="text-gray-500 text-[10px]">Total Team Members</div>
-                                <div id="teamTotalCount" class="font-bold text-emerald-700 text-base">0</div>
-                            </div>
-                            <div class="bg-teal-50 p-3 rounded-lg">
-                                <div class="text-gray-500 text-[10px]">Current Tier Level</div>
-                                <div id="teamCurrentTier" class="font-bold text-teal-700 text-base">Team A (4%)</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                        <h4 class="font-bold text-xs text-gray-700">Tier Commission Structure:</h4>
-                        <div class="space-y-2 text-xs text-gray-600">
-                            <div class="p-2 bg-gray-50 rounded flex justify-between items-center">
-                                <span>Team A (0 - 25 Invites)</span>
-                                <span class="font-bold text-emerald-600">4% Commission</span>
-                            </div>
-                            <div class="p-2 bg-gray-50 rounded flex justify-between items-center">
-                                <span>Team B (25 - 150 Invites)</span>
-                                <span class="font-bold text-emerald-600">2% Commission</span>
-                            </div>
-                            <div class="p-2 bg-gray-50 rounded flex justify-between items-center">
-                                <span>Team C (150 - 1500 Invites)</span>
-                                <span class="font-bold text-emerald-600">1% Commission</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-xl shadow-sm space-y-2">
-                        <h4 class="font-bold text-xs text-gray-700">Team Deposit History & Rewards</h4>
-                        <div id="teamMembersList" class="space-y-2 text-xs">
-                            <p class="text-gray-400 text-center py-2">No team deposit records yet.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ACCOUNT TAB -->
-                <div id="viewAccount" class="p-4 space-y-4 hide">
-                    <div class="flex justify-between items-center">
-                        <div class="font-bold text-base text-gray-800">My Profile</div>
-                        <button onclick="handleLogout()" class="bg-red-50 text-red-600 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
-                    </div>
-
-                    <div class="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-4 rounded-2xl shadow-md space-y-3">
-                        <div class="flex justify-between items-center text-xs text-emerald-100">
-                            <span>Total Balance</span>
-                            <span id="userVipBadge" class="bg-amber-400 text-amber-900 font-bold px-2.5 py-1 rounded text-xs shadow">VIP 0</span>
-                        </div>
-                        <div class="text-2xl font-bold">₹<span id="userBalanceDisplay">0.00</span></div>
-                        <div class="grid grid-cols-2 gap-2 pt-2 border-t border-emerald-500/40 text-xs">
-                            <div>Recharge Bal: <span id="userRechargeBal">₹0.00</span></div>
-                            <div>Withdraw Bal: <span id="userWithdrawBal">₹0.00</span></div>
-                        </div>
-                    </div>
-
-                    <div class="bg-white rounded-xl shadow-sm overflow-hidden text-xs divide-y">
-                        <button onclick="openVipModal()" class="w-full p-3.5 flex justify-between items-center hover:bg-gray-50 font-medium">
-                            <span class="flex items-center gap-2"><i class="fa-solid fa-crown text-amber-500"></i> VIP Status & Deposit Tiers</span>
-                            <i class="fa-solid fa-chevron-right text-gray-400"></i>
-                        </button>
-                        <button onclick="switchTab('recharge')" class="w-full p-3.5 flex justify-between items-center hover:bg-gray-50 font-medium">
-                            <span class="flex items-center gap-2"><i class="fa-solid fa-wallet text-emerald-600"></i> Recharge Money</span>
-                            <i class="fa-solid fa-chevron-right text-gray-400"></i>
-                        </button>
-                        <button onclick="switchTab('withdraw')" class="w-full p-3.5 flex justify-between items-center hover:bg-gray-50 font-medium">
-                            <span class="flex items-center gap-2"><i class="fa-solid fa-money-bill-transfer text-emerald-600"></i> Withdraw Money</span>
-                            <i class="fa-solid fa-chevron-right text-gray-400"></i>
-                        </button>
-                        <button onclick="switchTab('team')" class="w-full p-3.5 flex justify-between items-center hover:bg-gray-50 font-medium">
-                            <span class="flex items-center gap-2"><i class="fa-solid fa-users text-emerald-600"></i> My Team</span>
-                            <i class="fa-solid fa-chevron-right text-gray-400"></i>
-                        </button>
-                        <a href="https://t.me/+byjidIDYoqZiNzll" target="_blank" class="w-full p-3.5 flex justify-between items-center hover:bg-gray-50 font-medium text-gray-700">
-                            <span class="flex items-center gap-2"><i class="fa-solid fa-headset text-emerald-600"></i> Help Center (24x7 Support)</span>
-                            <i class="fa-solid fa-chevron-right text-gray-400"></i>
-                        </a>
-                    </div>
-                </div>
-
-                <!-- RECHARGE TAB -->
-                <div id="viewRecharge" class="p-4 space-y-4 hide">
-                    <div class="flex items-center justify-between">
-                        <button onclick="switchTab('home')" class="text-gray-600 text-sm font-semibold"><i class="fa-solid fa-arrow-left mr-1"></i> Back</button>
-                        <h2 class="font-bold text-sm text-gray-900">Deposit Funds</h2>
-                        <div></div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                        <label class="block text-xs font-medium text-gray-700">Enter Amount (₹100 - ₹1,00,000)</label>
-                        <input type="number" id="rechargeInputAmount" placeholder="Enter amount" class="w-full px-4 py-3 rounded-lg border text-sm focus:ring-2 focus:ring-emerald-500">
-                        <div class="grid grid-cols-3 gap-2">
-                            <button onclick="setRechargeAmount(200)" class="py-2 border rounded-lg text-xs font-semibold">₹200 (VIP 1)</button>
-                            <button onclick="setRechargeAmount(1500)" class="py-2 border rounded-lg text-xs font-semibold">₹1500 (VIP 2)</button>
-                            <button onclick="setRechargeAmount(3500)" class="py-2 border rounded-lg text-xs font-semibold">₹3500 (VIP 3)</button>
-                        </div>
-                        <button onclick="proceedToPaymentGateway()" class="w-full py-3 bg-emerald-600 text-white font-semibold rounded-lg text-sm shadow">Proceed to Pay</button>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-xl shadow-sm space-y-2">
-                        <h3 class="font-bold text-xs text-gray-700">Deposit History</h3>
-                        <div id="userRechargeHistory" class="space-y-2 text-xs">
-                            <p class="text-gray-400 text-center py-2">No recharge records yet.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- WITHDRAW TAB -->
-                <div id="viewWithdraw" class="p-4 space-y-4 hide">
-                    <div class="flex items-center justify-between">
-                        <button onclick="switchTab('home')" class="text-gray-600 text-sm font-semibold"><i class="fa-solid fa-arrow-left mr-1"></i> Back</button>
-                        <h2 class="font-bold text-sm text-gray-900">Withdrawal</h2>
-                        <div></div>
-                    </div>
-
-                    <div class="bg-blue-50 border border-blue-200 text-blue-700 p-3 rounded-xl text-xs font-medium">
-                        <i class="fa-solid fa-circle-info mr-1"></i> Note: Minimum withdrawal is ₹100. 12% tax fee applies. Completed within 24 hours (1 withdrawal limit per day).
-                    </div>
-
-                    <div id="bankDetailsCard" class="bg-white p-4 rounded-xl shadow-sm space-y-3">
-                        <h3 class="font-bold text-xs text-emerald-600">Step 1: Enter Bank / Account Details</h3>
-                        <div>
-                            <label class="block text-[11px] text-gray-600 mb-1">Holder Name</label>
-                            <input type="text" id="bankHolderName" placeholder="Enter full name" class="w-full px-3 py-2 rounded border text-xs">
-                        </div>
-                        <div>
-                            <label class="block text-[11px] text-gray-600 mb-1">Bank Account Number</label>
-                            <input type="text" id="bankAccNo" placeholder="Enter account number" class="w-full px-3 py-2 rounded border text-xs">
-                        </div>
-                        <div>
-                            <label class="block text-[11px] text-gray-600 mb-1">IFSC Code</label>
-                            <input type="text" id="bankIfsc" placeholder="Enter IFSC code" class="w-full px-3 py-2 rounded border text-xs">
-                        </div>
-                        <button onclick="saveBankDetails()" class="w-full py-2.5 bg-gray-900 text-white rounded-lg text-xs font-semibold">Save Bank Details</button>
-                    </div>
-
-                    <div id="withdrawFormCard" class="hide bg-white p-4 rounded-xl shadow-sm space-y-3">
-                        <div class="text-xs text-emerald-700 font-medium bg-emerald-50 p-2 rounded">
-                            Saved Bank: <span id="savedBankName" class="font-bold"></span> | <span id="savedBankAcc" class="font-bold"></span> (<span id="savedBankIfsc" class="font-bold"></span>)
-                        </div>
-                        <label class="block text-xs font-medium text-gray-700">Withdraw Amount (Min ₹100 - Max ₹30,000) [12% Tax applies]</label>
-                        <input type="number" id="withdrawInputAmount" placeholder="Enter amount" class="w-full px-4 py-3 rounded border text-xs">
-                        <button id="submitWithdrawBtn" onclick="submitWithdrawRequest()" class="w-full py-3 bg-emerald-600 text-white font-semibold rounded-lg text-sm shadow">Submit Withdrawal</button>
-                        <div id="withdrawLimitMsg" class="text-center text-xs text-red-500 font-bold hide">You have already used your 1 withdrawal limit for today! Next withdrawal available tomorrow.</div>
-                    </div>
-
-                    <div class="bg-white p-4 rounded-xl shadow-sm space-y-2">
-                        <h3 class="font-bold text-xs text-gray-700">Withdrawal History</h3>
-                        <div id="userWithdrawHistory" class="space-y-2 text-xs">
-                            <p class="text-gray-400 text-center py-2">No withdrawal records yet.</p>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- Bottom Navigation Bar -->
-            <div class="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 shadow-lg">
-                <button onclick="switchTab('home')" id="navHomeBtn" class="flex flex-col items-center text-emerald-600 font-semibold text-xs">
-                    <i class="fa-solid fa-house text-lg"></i> Home
-                </button>
-                <button onclick="switchTab('invest')" id="navInvestBtn" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
-                    <i class="fa-solid fa-chart-pie text-lg"></i> Invest
-                </button>
-                <button onclick="switchTab('team')" id="navTeamBtn" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
-                    <i class="fa-solid fa-users text-lg"></i> Team
-                </button>
-                <button onclick="switchTab('account')" id="navAccountBtn" class="flex flex-col items-center text-gray-500 font-semibold text-xs">
-                    <i class="fa-solid fa-user text-lg"></i> Account
-                </button>
-            </div>
-        </div>
-
-        <!-- VIP STATUS MODAL -->
-        <div id="vipStatusModal" class="hide fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-            <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
-                <div class="flex justify-between items-center border-b pb-2">
-                    <h3 class="font-bold text-sm text-gray-900 flex items-center gap-1.5"><i class="fa-solid fa-crown text-amber-500"></i> VIP Status & Deposit Tiers</h3>
-                    <button onclick="closeVipModal()" class="text-gray-400 hover:text-gray-700 font-bold text-lg">&times;</button>
-                </div>
-                <div class="bg-amber-50 border border-amber-200 p-2.5 rounded-lg text-xs text-amber-800 flex justify-between items-center">
-                    <span>Your Current Level:</span>
-                    <span id="modalCurrentVipBadge" class="font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded text-xs shadow">VIP 0</span>
-                </div>
-                <div class="text-xs text-gray-700 space-y-2 divide-y">
-                    <div class="flex justify-between pt-1"><span>VIP 1 Requirement:</span> <span class="font-semibold text-emerald-600">₹200 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 2 Requirement:</span> <span class="font-semibold text-emerald-600">₹1,500 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 3 Requirement:</span> <span class="font-semibold text-emerald-600">₹3,500 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 4 Requirement:</span> <span class="font-semibold text-emerald-600">₹5,600 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 5 Requirement:</span> <span class="font-semibold text-emerald-600">₹10,000 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 6 Requirement:</span> <span class="font-semibold text-emerald-600">₹15,000 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 7 Requirement:</span> <span class="font-semibold text-emerald-600">₹25,000 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 8 Requirement:</span> <span class="font-semibold text-emerald-600">₹35,000 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 9 Requirement:</span> <span class="font-semibold text-emerald-600">₹45,000 Single Deposit</span></div>
-                    <div class="flex justify-between pt-2"><span>VIP 10 Requirement:</span> <span class="font-semibold text-emerald-600">₹1,00,000 Single Deposit</span></div>
-                </div>
-                <button onclick="closeVipModal()" class="w-full py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Got It</button>
-            </div>
-        </div>
-
-        <!-- PAYMENT GATEWAY MODAL -->
-        <div id="paymentModal" class="hide fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-            <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
-                <div class="flex justify-between items-center border-b pb-2">
-                    <h3 class="font-bold text-sm text-gray-900">Secure Payment Gateway</h3>
-                    <button onclick="closePaymentModal()" class="text-gray-400 hover:text-gray-700 font-bold text-base">&times;</button>
-                </div>
-
-                <div class="bg-red-50 border border-red-200 text-red-700 p-2.5 rounded-lg text-center text-xs font-bold">
-                    Time Remaining: <span id="paymentTimer" class="text-sm">12:00</span>
-                </div>
-
-                <div class="bg-amber-50 border border-amber-300 text-amber-900 p-2.5 rounded-lg text-xs font-medium leading-relaxed">
-                    Please do not pay via third party UPI app or wallet. Please pay using the given apps only.
-                </div>
-
-                <div class="space-y-2 text-xs">
-                    <div class="font-semibold text-gray-700">Pay via Original UPI App:</div>
-                    <div class="grid grid-cols-4 gap-2 text-center">
-                        <a id="paytmAppBtn" href="#" target="_blank" class="bg-blue-50 border border-blue-200 p-2 rounded-lg flex flex-col items-center justify-center gap-1 hover:bg-blue-100">
-                            <i class="fa-solid fa-mobile-screen text-blue-600 text-base"></i>
-                            <span class="text-[10px] font-bold text-blue-900">Paytm</span>
-                        </a>
-                        <a id="phonepeAppBtn" href="#" target="_blank" class="bg-purple-50 border border-purple-200 p-2 rounded-lg flex flex-col items-center justify-center gap-1 hover:bg-purple-100">
-                            <i class="fa-solid fa-wallet text-purple-600 text-base"></i>
-                            <span class="text-[10px] font-bold text-purple-900">PhonePe</span>
-                        </a>
-                        <a id="gpayAppBtn" href="#" target="_blank" class="bg-emerald-50 border border-emerald-200 p-2 rounded-lg flex flex-col items-center justify-center gap-1 hover:bg-emerald-100">
-                            <i class="fa-brands fa-google-pay text-emerald-600 text-base"></i>
-                            <span class="text-[10px] font-bold text-emerald-900">GPay</span>
-                        </a>
-                        <a id="mobikwikAppBtn" href="#" target="_blank" class="bg-sky-50 border border-sky-200 p-2 rounded-lg flex flex-col items-center justify-center gap-1 hover:bg-sky-100">
-                            <i class="fa-solid fa-building-columns text-sky-600 text-base"></i>
-                            <span class="text-[10px] font-bold text-sky-900">MobiKwik</span>
-                        </a>
-                    </div>
-                </div>
-
-                <div class="space-y-2 text-xs">
-                    <div class="font-semibold text-gray-700">Or Pay to Assigned UPI ID:</div>
-                    <div class="bg-gray-100 p-3 rounded-lg flex justify-between items-center font-mono font-bold text-emerald-700">
-                        <span id="assignedUpiText">6377833820-2.wallet@phonepe</span>
-                        <button onclick="navigator.clipboard.writeText(document.getElementById('assignedUpiText').innerText); alert('UPI ID copied successfully!');" class="bg-emerald-600 text-white px-2 py-1 rounded text-[10px]">Copy</button>
-                    </div>
-                </div>
-
-                <div class="space-y-2 pt-1 border-t">
-                    <label class="block text-xs font-semibold text-gray-700">Enter UTR / Transaction ID (12 Digits)</label>
-                    <input type="text" id="paymentUtrInput" placeholder="Enter 12-digit UTR ID" class="w-full px-3 py-2 rounded border text-xs">
-                </div>
-
-                <div class="space-y-2">
-                    <label class="block text-xs font-semibold text-gray-700">Upload Payment Screenshot</label>
-                    <input type="file" id="paymentScreenshotInput" accept="image/*" class="w-full px-2 py-1.5 rounded border text-[11px] bg-gray-50 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100">
-                </div>
-
-                <div class="flex gap-2 pt-2">
-                    <button onclick="closePaymentModal()" class="flex-1 py-2.5 bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold">Cancel</button>
-                    <button onclick="submitPaymentProof()" class="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold">Submit Proof</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- FORGOT PASSWORD MODAL -->
-        <div id="forgotPasswordModal" class="hide fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-            <div class="bg-white w-full max-w-sm rounded-2xl p-5 space-y-3">
-                <div class="flex justify-between items-center border-b pb-2">
-                    <h3 class="font-bold text-sm text-gray-900">Reset Password via OTP</h3>
-                    <button onclick="document.getElementById('forgotPasswordModal').classList.add('hide')" class="text-gray-400">&times;</button>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Registered Mobile Number</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="forgotPhone" placeholder="Enter mobile number" class="w-full px-3 py-2 rounded border text-xs">
-                        <button onclick="sendForgotOTP()" class="bg-gray-800 text-white px-3 rounded text-xs font-medium">Get OTP</button>
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">Enter OTP</label>
-                    <input type="text" id="forgotOtp" placeholder="Enter OTP" class="w-full px-3 py-2 rounded border text-xs">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-gray-600 mb-1">New Password</label>
-                    <input type="password" id="forgotNewPassword" placeholder="Enter new password" class="w-full px-3 py-2 rounded border text-xs">
-                </div>
-                <button onclick="executePasswordReset()" class="w-full py-2.5 bg-emerald-600 text-white font-semibold rounded text-xs">Update Password</button>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- IMAGE PREVIEW MODAL FOR ADMIN -->
-    <div id="imagePreviewModal" class="hide fixed inset-0 bg-black/90 flex items-center justify-center p-4 z-[60]">
-        <div class="relative max-w-lg w-full text-center">
-            <button onclick="closeImagePreview()" class="absolute -top-10 right-0 text-white font-bold text-2xl px-2">&times;</button>
-            <img id="previewModalImg" src="" class="max-h-[80vh] mx-auto rounded shadow-lg border border-gray-700">
-        </div>
-    </div>
-
-    <!-- ADMIN PANEL SCREEN -->
-    <div id="adminPanelModal" class="hide fixed inset-0 bg-gray-900 z-50 overflow-y-auto text-white p-4">
-        <div class="max-w-md mx-auto space-y-4 pb-12">
-            <div class="flex justify-between items-center border-b border-gray-800 pb-3">
-                <div>
-                    <h2 class="font-bold text-base text-emerald-400">System Control Panel</h2>
-                    <p class="text-[10px] text-gray-400">Manage Deposits, Withdrawals & Users</p>
-                </div>
-                <button onclick="closeAdminPanel()" class="bg-red-600 px-3 py-1 rounded text-xs font-bold">Close</button>
-            </div>
-
-            <div class="grid grid-cols-4 gap-1 bg-gray-800 p-1 rounded-lg text-[11px] font-semibold text-center">
-                <button onclick="switchAdminTab('users')" id="admTabUsers" class="py-2 bg-emerald-600 rounded">Users</button>
-                <button onclick="switchAdminTab('deposits')" id="admTabDep" class="py-2 rounded">Deposits</button>
-                <button onclick="switchAdminTab('withdraws')" id="admTabWd" class="py-2 rounded">Withdraws</button>
-                <button onclick="switchAdminTab('products')" id="admTabProd" class="py-2 rounded">Products</button>
-            </div>
-
-            <!-- Users List -->
-            <div id="adminSectionUsers" class="space-y-2">
-                <h3 class="text-xs font-bold text-gray-300">Registered Users</h3>
-                <div id="adminUsersList" class="space-y-2"></div>
-            </div>
-
-            <!-- Deposits Approval -->
-            <div id="adminSectionDeposits" class="space-y-2 hide">
-                <h3 class="text-xs font-bold text-gray-300">Pending Deposit Approvals</h3>
-                <div id="adminDepositsList" class="space-y-2"></div>
-            </div>
-
-            <!-- Withdrawals Approval -->
-            <div id="adminSectionWithdraws" class="space-y-2 hide">
-                <h3 class="text-xs font-bold text-gray-300">Pending Withdrawal Approvals</h3>
-                <div id="adminWithdrawsList" class="space-y-2"></div>
-            </div>
-
-            <!-- Products Manager -->
-            <div id="adminSectionProducts" class="space-y-3 hide">
-                <div class="bg-gray-800 p-3 rounded-xl space-y-2 text-xs">
-                    <h3 class="font-bold text-emerald-400">Add New Investment Product</h3>
-                    <input type="text" id="newProdName" placeholder="Product Name" class="w-full px-3 py-2 rounded bg-gray-900 border border-gray-700 text-white">
-                    <input type="number" id="newProdPrice" placeholder="Price (₹)" class="w-full px-3 py-2 rounded bg-gray-900 border border-gray-700 text-white">
-                    <input type="number" id="newProdDaily" placeholder="Return Amount (₹)" class="w-full px-3 py-2 rounded bg-gray-900 border border-gray-700 text-white">
-                    <input type="text" id="newProdImage" placeholder="Image URL" class="w-full px-3 py-2 rounded bg-gray-900 border border-gray-700 text-white">
-                    
-                    <div>
-                        <label class="block text-[11px] text-gray-400 mb-1">Select Investment Section / Category</label>
-                        <select id="newProdCategory" class="w-full px-3 py-2 rounded bg-gray-900 border border-gray-700 text-white text-xs">
-                            <option value="VIP 1">VIP 1</option>
-                            <option value="VIP 2">VIP 2</option>
-                            <option value="BENEFITS">BENEFITS</option>
-                        </select>
-                    </div>
-
-                    <button onclick="adminAddProduct()" class="w-full py-2 bg-emerald-600 font-bold rounded">Publish Product</button>
-                </div>
-                <div id="adminProductsList" class="space-y-2"></div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // FIREBASE CONFIGURATION
-        const firebaseConfig = {
-            databaseURL: "https://earnx-pro-default-rtdb.firebaseio.com/"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const rtdb = firebase.database();
-
-        const ADMIN_PHONE = "7071088675";
-        const ADMIN_PASS = "Faraz78678678690786";
-        
-        const ROTATING_UPIS = [
-            "7071088675@mbk",
-            "7071088675@mbkns",
-            "7071088675-3@ybl",
-            "rubeena.rashid@ptyes",
-            "6377833820-2.wallet@phonepe",
-            "rohit.m820@ptaxis"
-        ];
-
-        let db = {
-            users: [],
-            deposits: [],
-            withdraws: [],
+// Initialize Database with notifications and extended structures
+function readDB() {
+    if (!fs.existsSync(DB_FILE)) {
+        const initialData = {
+            users: [
+                {
+                    uid: 'UID10001',
+                    username: '7071088675',
+                    name: 'Admin',
+                    password: 'Faraz78678678690786',
+                    rechargeBalance: 0,
+                    withdrawBalance: 0,
+                    is_admin: true,
+                    bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
+                    deposits: [],
+                    withdrawals: [],
+                    investments: [],
+                    notifications: [],
+                    referredBy: null,
+                    referralCount: 0,
+                    teamLevel: 'A',
+                    lastCheckInDate: null
+                }
+            ],
             products: [],
-            investments: [],
-            teamCommissions: []
+            otps: {}
         };
+        fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
+    }
+    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    if (!data.products) data.products = [];
+    if (!data.otps) data.otps = {};
+    
+    data.users.forEach(u => {
+        if (u.rechargeBalance === undefined) u.rechargeBalance = u.balance || 0;
+        if (u.withdrawBalance === undefined) u.withdrawBalance = 0;
+        if (u.lastCheckInDate === undefined) u.lastCheckInDate = null;
+        if (!u.notifications) u.notifications = [];
+        else {
+            u.notifications = u.notifications.map((n, idx) => ({
+                id: n.id || ('notif_' + (idx + 1)),
+                user_id: n.user_id || u.uid,
+                title: n.title || 'System Notification',
+                message: n.message || n,
+                is_read: n.is_read !== undefined ? n.is_read : false,
+                created_at: n.created_at || new Date().toISOString()
+            }));
+        }
+        if (!u.name) u.name = '';
+    });
 
-        let currentUser = JSON.parse(localStorage.getItem('earnx_current_user')) || null;
-        let activeTimerInterval = null;
-        let signupRefBy = null;
-        let currentInvestSubTab = "VIP 1";
+    return data;
+}
 
-        // Real-time Sync with Firebase Database
-        rtdb.ref('/').on('value', (snapshot) => {
-            const serverData = snapshot.val();
-            if(serverData) {
-                db.users = serverData.users || [];
-                db.deposits = serverData.deposits || [];
-                db.withdraws = serverData.withdraws || [];
-                db.products = serverData.products || [];
-                db.investments = serverData.investments || [];
-                db.teamCommissions = serverData.teamCommissions || [];
+function writeDB(data) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+}
 
-                if(currentUser && currentUser.phone !== ADMIN_PHONE) {
-                    let updated = db.users.find(u => u.phone === currentUser.phone);
-                    if(updated) {
-                        currentUser = updated;
-                        localStorage.setItem('earnx_current_user', JSON.stringify(currentUser));
-                        if(document.getElementById('dashboardScreen') && !document.getElementById('dashboardScreen').classList.contains('hide')) {
-                            showDashboardDataOnly();
-                        }
-                    }
-                }
+// Multer Storage Configuration for Deposits Screenshot
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, UPLOAD_DIR);
+    },
+    filename: function (req, file, cb) {
+        cb(null, 'deposit_' + Date.now() + path.extname(file.originalname));
+    }
+});
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }
+});
+
+// Background Task: Check Investments Timers every 10 seconds
+setInterval(() => {
+    let db = readDB();
+    let updated = false;
+    const now = Date.now();
+
+    db.users.forEach(user => {
+        if (!user.investments) user.investments = [];
+        user.investments.forEach(inv => {
+            if (inv.status === 'Active' && now >= inv.endTime) {
+                inv.status = 'Completed';
+                const totalReturn = inv.returnAmount || inv.amount;
+                user.withdrawBalance += totalReturn;
+                updated = true;
+            }
+        });
+    });
+
+    if (updated) {
+        writeDB(db);
+    }
+}, 10000);
+
+// Ensure default admin exists
+const dbInit = readDB();
+const adminExists = dbInit.users.find(u => u.username === '7071088675');
+if (!adminExists) {
+    dbInit.users.push({
+        uid: 'UID10001',
+        username: '7071088675',
+        name: 'Admin',
+        password: 'Faraz78678678690786',
+        rechargeBalance: 0,
+        withdrawBalance: 0,
+        is_admin: true,
+        bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
+        deposits: [],
+        withdrawals: [],
+        investments: [],
+        notifications: [],
+        referredBy: null,
+        referralCount: 0,
+        teamLevel: 'A',
+        lastCheckInDate: null
+    });
+    writeDB(dbInit);
+}
+
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(session({
+    secret: 'earnxpro_super_secret_key',
+    resave: false,
+    saveUninitialized: false
+}));
+
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// WhatsApp Socket Connection Variable (Baileys Integration)
+let sock = null;
+
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    
+    sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: true,
+        logger: pino({ level: 'silent' })
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
+        if (qr) {
+            console.log('[WHATSAPP] Scan this QR code using your WhatsApp linked devices:');
+            qrcode.generate(qr, { small: true });
+        }
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('Connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect);
+            if (shouldReconnect) {
+                connectToWhatsApp();
+            }
+        } else if (connection === 'open') {
+            console.log('[WHATSAPP] Connected successfully to WhatsApp!');
+        }
+    });
+}
+
+// Start WhatsApp connection on server boot
+connectToWhatsApp();
+
+// Real WhatsApp OTP Function using Baileys
+async function sendRealOTP(phone, otp, callback) {
+    let formattedPhone = phone.replace(/\D/g, '');
+    if (formattedPhone.length === 10) {
+        formattedPhone = '91' + formattedPhone;
+    }
+    
+    const jid = `${formattedPhone}@s.whatsapp.net`;
+    const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
+
+    try {
+        if (!sock) {
+            console.log('[WHATSAPP ERROR] Socket not initialized yet.');
+            console.log(`[FALLBACK OTP LOG] Phone: +${formattedPhone} | OTP: ${otp}`);
+            callback(true);
+            return;
+        }
+
+        await sock.sendMessage(jid, { text: messageText });
+        console.log(`[WHATSAPP SENT] OTP ${otp} successfully sent to +${formattedPhone}`);
+        callback(true);
+    } catch (error) {
+        console.error('[WHATSAPP SEND ERROR]:', error);
+        console.log(`[FALLBACK OTP LOG] Phone: +${formattedPhone} | OTP: ${otp}`);
+        callback(true);
+    }
+}
+
+// Layout Template with Ultra-Professional 3D Glassmorphism Logo & Background Gradients
+function renderLayout(title, content, user, req) {
+    let bottomNav = '';
+    let topHeaderRight = '';
+
+    let showChannelModal = false;
+    if (req && !req.session.modalShown) {
+        showChannelModal = true;
+        req.session.modalShown = true;
+    }
+
+    if (user) {
+        topHeaderRight = `<a href="/logout" class="text-red-400 font-semibold px-3 py-1 bg-gray-800/80 hover:bg-red-500/20 rounded-lg text-xs border border-red-500/30 transition-all">Logout</a>`;
+        if (user.is_admin) {
+            bottomNav = `
+                <div class="bg-gray-900/90 backdrop-blur-md border-t border-gray-800 py-3 px-4 flex justify-around items-center fixed bottom-0 left-0 right-0 shadow-2xl z-40">
+                    <a href="/admin" class="text-yellow-400 font-bold text-xs flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500/10 rounded-lg border border-yellow-500/30">🛡 Admin Panel</a>
+                    <a href="/logout" class="text-red-400 font-bold text-xs flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 rounded-lg border border-red-500/30">Logout</a>
+                </div>
+            `;
+        } else {
+            bottomNav = `
+                <div class="bg-gray-900/90 backdrop-blur-md border-t border-gray-800 py-2.5 px-4 flex justify-around items-center fixed bottom-0 left-0 right-0 shadow-2xl z-40">
+                    <a href="/home" class="text-green-400 font-bold text-xs flex flex-col items-center gap-0.5"><span class="text-lg">🏠</span> Home</a>
+                    <a href="/invest" class="text-yellow-400 font-bold text-xs flex flex-col items-center gap-0.5"><span class="text-lg">📈</span> Invest</a>
+                    <a href="/team" class="text-blue-400 font-bold text-xs flex flex-col items-center gap-0.5"><span class="text-lg">👥</span> Team</a>
+                    <a href="/account" class="text-purple-400 font-bold text-xs flex flex-col items-center gap-0.5"><span class="text-lg">👤</span> Account</a>
+                </div>
+            `;
+        }
+    } else {
+        topHeaderRight = `
+            <a href="/login" class="text-gray-300 font-semibold text-xs px-3 py-1.5 bg-gray-800/80 rounded-lg border border-gray-700 hover:border-gray-500 transition-all">Login</a>
+            <a href="/signup" class="bg-gradient-to-r from-green-600 to-emerald-500 px-3.5 py-1.5 rounded-lg text-white font-bold text-xs shadow-lg shadow-green-500/20 hover:scale-105 transition-all">Register</a>
+        `;
+    }
+
+    const channelModalHtml = `
+        <div id="channelModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${showChannelModal ? '' : 'hidden'}">
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl relative overflow-hidden">
+                <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
+                <div class="w-16 h-16 bg-blue-500/20 text-blue-400 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold shadow-inner">📢</div>
+                <h3 class="text-xl font-extrabold text-white">Join Our Official Channel</h3>
+                <p class="text-xs text-gray-300 leading-relaxed">Stay updated with verified payment proofs, strategic announcements, and latest platform security updates!</p>
+                <a href="https://telegram.me/EarnXProo" target="_blank" onclick="closeChannelModal()" class="block w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-blue-500/25 transition-all">Follow Us on Telegram</a>
+                <button onclick="closeChannelModal()" class="text-xs text-gray-400 underline hover:text-white transition-colors">Continue to Platform</button>
+            </div>
+        </div>
+        <script>
+            function closeChannelModal() {
+                document.getElementById('channelModal').classList.add('hidden');
+            }
+        </script>
+    `;
+
+    return `
+    <!DOCTYPE html>
+    <html lang="en" class="dark">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${title} - EarnX Pro | Secure Financial Ecosystem</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <style>
+            body {
+                background: radial-gradient(circle at 50% 0%, #111c2e 0%, #0b0f19 70%);
+                background-attachment: fixed;
+                font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            }
+            .account-container {
+                padding: 16px;
+                max-width: 480px;
+                margin: auto;
+            }
+            .user-id-card {
+                background: linear-gradient(135deg, rgba(22, 27, 34, 0.95) 0%, rgba(31, 36, 45, 0.95) 100%);
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(56, 189, 248, 0.2);
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                padding: 18px;
+                border-radius: 16px;
+                margin-bottom: 16px;
+            }
+            .balance-cards-grid {
+                display: flex;
+                gap: 12px;
+                margin-bottom: 20px;
+            }
+            .balance-card {
+                flex: 1;
+                background: linear-gradient(135deg, rgba(22, 27, 34, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(56, 189, 248, 0.15);
+                padding: 16px;
+                border-radius: 14px;
+                text-align: center;
+                box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+            }
+            .balance-card.recharge .currency { color: #00e676; font-size: 22px; font-weight: 800; text-shadow: 0 0 20px rgba(0,230,118,0.3); }
+            .balance-card.withdraw .currency { color: #b388ff; font-size: 22px; font-weight: 800; text-shadow: 0 0 20px rgba(179,136,255,0.3); }
+            .action-buttons-stack button, .action-buttons-stack a {
+                display: block;
+                width: 100%;
+                padding: 14px;
+                margin-bottom: 10px;
+                border-radius: 12px;
+                border: none;
+                font-weight: 700;
+                cursor: pointer;
+                font-size: 15px;
+                text-align: center;
+                text-decoration: none;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                transition: transform 0.1s ease, filter 0.2s ease;
+            }
+            .action-buttons-stack button:active, .action-buttons-stack a:active {
+                transform: scale(0.98);
+            }
+            .deposit-btn { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; }
+            .withdraw-btn { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
+            .btn-support { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
+            .menu-link-btn {
+                background: linear-gradient(135deg, rgba(22, 27, 34, 0.9), rgba(15, 23, 42, 0.9));
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(56, 189, 248, 0.15);
+                color: #fff;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 15px 18px;
+                border-radius: 14px;
+                margin-bottom: 10px;
+                font-weight: 600;
+                font-size: 14px;
+                text-decoration: none;
+                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            }
+            .menu-link-btn:hover {
+                background: linear-gradient(135deg, rgba(31, 36, 45, 0.95), rgba(30, 41, 59, 0.95));
+                border-color: rgba(56, 189, 248, 0.4);
+                transform: translateY(-1px);
+                box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+            }
+            .deposit-warning {
+                background: rgba(210, 153, 34, 0.1);
+                border: 1px solid rgba(210, 153, 34, 0.3);
+                border-left: 4px solid #d29922;
+                color: #f6ad55;
+                padding: 12px;
+                font-size: 12px;
+                border-radius: 8px;
+                margin-bottom: 16px;
+                line-height: 1.5;
+            }
+            .locked-bank-box {
+                background: rgba(22, 27, 34, 0.9);
+                border: 1px solid rgba(46, 160, 67, 0.5);
+                padding: 14px;
+                border-radius: 12px;
+                margin-bottom: 16px;
+            }
+            .lock-badge {
+                color: #2ea043;
+                font-size: 12px;
+                font-weight: 700;
+            }
+            .withdrawal-history-card {
+                background: rgba(30, 34, 45, 0.85);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(42, 46, 57, 0.9);
+                border-radius: 12px;
+                padding: 14px 16px;
+                margin-bottom: 12px;
+                color: #fff;
+                font-size: 13px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            }
+            .history-row {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 4px;
+            }
+            .final-amount {
+                font-weight: 700;
+                border-top: 1px solid rgba(42, 46, 57, 0.8);
+                padding-top: 8px;
+                margin-top: 8px;
+                color: #00e676;
+            }
+            .history-meta {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: 8px;
+                color: #9e9e9e;
+                font-size: 12px;
+            }
+            .history-date {
+                font-size: 11px;
+                color: #757575;
+                margin-top: 3px;
+            }
+            .status.completed {
+                color: #00e676;
+                font-weight: 700;
+            }
+        </style>
+    </head>
+    <body class="text-gray-100 min-h-screen flex flex-col justify-between pb-24 selection:bg-blue-500 selection:text-white">
+        ${channelModalHtml}
+        <header class="bg-gray-900/90 backdrop-blur-xl border-b border-gray-800 p-3 flex justify-between items-center sticky top-0 z-40 shadow-2xl">
+            <a href="/" class="flex items-center gap-2.5 group">
+                <div class="relative w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30 group-hover:scale-105 transition-transform">
+                    <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
+                        <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-sm tracking-tighter">EX</span>
+                    </div>
+                </div>
+                <div class="flex flex-col">
+                    <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">EarnX <span class="text-cyan-400 font-extrabold">Pro</span></span>
+                </div>
+            </a>
+            <div class="flex items-center gap-2">
+                <span class="hidden sm:inline-flex items-center gap-1 text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 font-semibold">🔒 256-Bit SSL</span>
+                <nav class="flex items-center space-x-3">
+                    ${topHeaderRight}
+                </nav>
+            </div>
+        </header>
+        <main class="flex-grow p-4 max-w-lg mx-auto w-full animate-fade-in" id="mainContainer">
+            ${content}
+        </main>
+        ${bottomNav}
+        <footer class="bg-gray-900/90 border-t border-gray-800 text-center py-4 text-xs text-gray-400 mb-12 space-y-1 backdrop-blur-md">
+            <p class="text-emerald-400/80 font-medium">🛡️ Secure Encrypted Financial Ecosystem</p>
+            <p>&copy; 2026 EarnX Pro. All rights reserved.</p>
+        </footer>
+    </body>
+    </html>`;
+}
+
+// Routes
+app.get('/', (req, res) => {
+    if (req.session.user) {
+        return res.redirect(req.session.user.is_admin ? '/admin' : '/home');
+    }
+    res.redirect('/login');
+});
+
+// Logout Route
+app.get('/logout', (req, res) => {
+    req.session.destroy((err) => {
+        res.redirect('/login');
+    });
+});
+
+// Login
+app.get('/login', (req, res) => {
+    req.session.modalShown = false;
+    const formHtml = `
+        <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800/80 mt-6 relative overflow-hidden">
+            <div class="absolute -top-16 -right-16 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl"></div>
+            <div class="flex items-center justify-center mb-6">
+                <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
+                    <div class="relative w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30">
+                        <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
+                            <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-lg tracking-tighter">EX</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col text-left">
+                        <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
+                            EarnX <span class="text-cyan-400 font-extrabold">Pro</span>
+                        </span>
+                        <span class="text-[9px] uppercase tracking-widest text-emerald-400/80 font-bold -mt-1">Secure Ecosystem</span>
+                    </div>
+                </div>
+            </div>
+            <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Welcome Back</h2>
+            <form action="/login" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Phone Number (Username)</label>
+                    <input type="text" name="username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Password</label>
+                    <input type="password" name="password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Secure Login</button>
+            </form>
+            <div class="flex justify-between items-center text-xs mt-5 pt-4 border-t border-gray-800">
+                <a href="/forgot-password" class="text-yellow-400 hover:underline">Forgot Password?</a>
+                <a href="/signup" class="text-green-400 font-bold hover:underline">Create Account</a>
+            </div>
+        </div>
+    `;
+    res.send(renderLayout('Login', formHtml, req.session.user, req));
+});
+
+app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    let db = readDB();
+    const user = db.users.find(u => u.username === username && u.password === password);
+    if (user) {
+        req.session.user = user;
+        req.session.modalShown = false;
+        return res.redirect(user.is_admin ? '/admin' : '/home');
+    }
+    res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
+});
+
+// Signup with WhatsApp Instructions Added
+app.get('/signup', (req, res) => {
+    req.session.modalShown = false;
+    const refCode = req.query.ref || '';
+    const formHtml = `
+        <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800/80 mt-6 relative overflow-hidden">
+            <div class="absolute -top-16 -right-16 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
+            <div class="flex items-center justify-center mb-6">
+                <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
+                    <div class="relative w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30">
+                        <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
+                            <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-lg tracking-tighter">EX</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col text-left">
+                        <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
+                            EarnX <span class="text-cyan-400 font-extrabold">Pro</span>
+                        </span>
+                        <span class="text-[9px] uppercase tracking-widest text-emerald-400/80 font-bold -mt-1">Secure Ecosystem</span>
+                    </div>
+                </div>
+            </div>
+            <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Create Secure Account</h2>
+            <form action="/send-signup-otp" method="POST" class="space-y-4">
+                <input type="hidden" name="ref" value="${refCode}">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Username</label>
+                    <input type="text" name="name" placeholder="Enter Username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">WhatsApp-Registered Mobile Number</label>
+                    <input type="text" name="username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
+                        ⚠️ Please provide your WhatsApp-registered mobile number. Real OTP will be sent directly to your WhatsApp via Baileys.
+                    </p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Password</label>
+                    <input type="password" name="password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                </div>
+                ${refCode ? `<p class="text-xs text-yellow-400 bg-yellow-500/10 p-2 rounded-lg border border-yellow-500/20">Referral Code Applied: ${refCode}</p>` : ''}
+                <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Send WhatsApp OTP & Register</button>
+            </form>
+            <p class="text-center text-xs text-gray-400 mt-4">Already have an account? <a href="/login" class="text-green-400 font-bold hover:underline">Login</a></p>
+        </div>
+    `;
+    res.send(renderLayout('Sign Up', formHtml, req.session.user, req));
+});
+
+app.post('/send-signup-otp', (req, res) => {
+    const { username, name, password, ref } = req.body;
+    let db = readDB();
+    if (db.users.find(u => u.username === username)) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Phone number already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    db.otps[username] = { otp, name, password, ref, type: 'signup' };
+    writeDB(db);
+
+    sendRealOTP(username, otp, (success) => {
+        const verifyHtml = `
+            <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10 text-center">
+                <h2 class="text-2xl font-black text-green-400 mb-3">Verify WhatsApp OTP</h2>
+                <p class="text-xs text-gray-400 mb-6">Secure 6-digit verification code sent to your WhatsApp number: <b>${username}</b></p>
+                <form action="/verify-signup-otp" method="POST" class="space-y-4">
+                    <input type="hidden" name="username" value="${username}">
+                    <input type="text" name="otp" required maxlength="6" placeholder="Enter 6-digit OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-green-500">
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-blue-500/20 transition-all">Confirm & Register</button>
+                </form>
+            </div>
+        `;
+        res.send(renderLayout('Verify OTP', verifyHtml, null, req));
+    });
+});
+
+app.post('/verify-signup-otp', (req, res) => {
+    const { username, otp } = req.body;
+    let db = readDB();
+    const record = db.otps[username];
+
+    if (record && record.type === 'signup' && record.otp === otp) {
+        const uniqueUid = 'UID' + Math.floor(10000 + Math.random() * 90000);
+        
+        let referredBy = null;
+        if (record.ref) {
+            let referrer = db.users.find(u => u.uid === record.ref);
+            if (referrer) {
+                referredBy = referrer.uid;
+                referrer.referralCount = (referrer.referralCount || 0) + 1;
+            }
+        }
+
+        db.users.push({
+            uid: uniqueUid,
+            username,
+            name: record.name || '',
+            password: record.password,
+            rechargeBalance: 0,
+            withdrawBalance: 0,
+            is_admin: false,
+            bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
+            deposits: [],
+            withdrawals: [],
+            investments: [],
+            notifications: [],
+            referredBy,
+            referralCount: 0,
+            teamLevel: 'A',
+            lastCheckInDate: null
+        });
+        delete db.otps[username];
+        writeDB(db);
+        req.session.modalShown = false;
+        return res.redirect('/login');
+    }
+    res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
+});
+
+// Forgot Password with WhatsApp Instructions Added
+app.get('/forgot-password', (req, res) => {
+    const formHtml = `
+        <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
+            <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Reset Password</h2>
+            <form action="/send-forgot-otp" method="POST" class="space-y-4">
+                <div>
+                    <input type="text" name="username" placeholder="WhatsApp-Registered Mobile Number" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
+                    <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
+                        ⚠️ Please provide your WhatsApp-registered mobile number to receive the password reset OTP.
+                    </p>
+                </div>
+                <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-yellow-500/20 transition-all">Send Reset OTP to WhatsApp</button>
+            </form>
+            <a href="/login" class="block text-center text-xs text-gray-400 mt-4 hover:text-white underline">Back to Login</a>
+        </div>
+    `;
+    res.send(renderLayout('Forgot Password', formHtml, null, req));
+});
+
+app.post('/send-forgot-otp', (req, res) => {
+    const { username } = req.body;
+    let db = readDB();
+    const user = db.users.find(u => u.username === username);
+    if (!user) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Phone number not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    db.otps[username] = { otp, type: 'forgot' };
+    writeDB(db);
+
+    sendRealOTP(username, otp, (success) => {
+        const resetHtml = `
+            <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
+                <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Set New Password</h2>
+                <form action="/verify-and-reset" method="POST" class="space-y-4">
+                    <input type="hidden" name="username" value="${username}">
+                    <input type="text" name="otp" required maxlength="6" placeholder="Enter WhatsApp OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-yellow-500">
+                    <input type="password" name="newPassword" placeholder="New Password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
+                    <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Update Password</button>
+                </form>
+            </div>
+        `;
+        res.send(renderLayout('Reset Password', resetHtml, null, req));
+    });
+});
+
+app.post('/verify-and-reset', (req, res) => {
+    const { username, otp, newPassword } = req.body;
+    let db = readDB();
+    const record = db.otps[username];
+
+    if (record && record.type === 'forgot' && record.otp === otp) {
+        let user = db.users.find(u => u.username === username);
+        if (user) {
+            user.password = newPassword;
+            delete db.otps[username];
+            writeDB(db);
+            return res.send(renderLayout('Success', `<p class="text-green-400 text-center font-bold text-base">Password updated successfully!</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Login Now</a>`, null, req));
+        }
+    }
+    res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
+});
+
+// Daily Check-In
+app.get('/daily-signin', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let user = db.users.find(u => u.username === req.session.user.username);
+    
+    const todayStr = new Date().toDateString();
+    if (user.lastCheckInDate === todayStr) {
+        return res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-yellow-400">Already Claimed Today!</h2><p class="text-xs text-gray-300">You have already claimed your daily sign-in bonus of ₹4 today. Return tomorrow for your next reward!</p><a href="/home" class="inline-block bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
+    }
+
+    user.lastCheckInDate = todayStr;
+    user.rechargeBalance = (user.rechargeBalance || 0) + 4;
+    writeDB(db);
+    req.session.user = user;
+
+    res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Recharge Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
+});
+
+// Home Page
+app.get('/home', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+
+    const todayStr = new Date().toDateString();
+    const alreadyCheckedIn = currentUser.lastCheckInDate === todayStr;
+
+    const topic1Text = `EarnX Pro represents the absolute pinnacle of international financial technology, high-frequency digital liquidity engineering, and decentralized asset management ecosystems. Designed with elite institutional-grade infrastructure, our platform bridges the complex gap between modern retail participants and global capital markets. We deliver unprecedented operational velocity, unmatched algorithmic stability, and rigorous multi-layered cryptographic security protocols to safeguard every transaction and user portfolio worldwide.`;
+    const topic2Text = `Security, absolute transparency, and ultra-low latency liquidity velocity form the unyielding triad upon which EarnX Pro's operational architecture is built. Our proprietary risk management frameworks, continuous real-time market auditing, and dedicated compliance systems ensure an uncompromised trading environment. Empowering thousands of visionary participants globally, EarnX Pro continues to pioneer sustainable wealth creation and cutting-edge digital asset solutions tailored for the future of finance.`;
+
+    const content = `
+        <div class="space-y-6">
+            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-5 rounded-3xl border border-emerald-500/20 shadow-2xl flex justify-between items-center relative overflow-hidden">
+                <div class="absolute -right-10 -bottom-10 w-28 h-28 bg-emerald-500/10 rounded-full blur-xl"></div>
+                <div>
+                    <h3 class="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">User Profile Verified</h3>
+                    <div class="text-lg font-black text-white mt-1">UID: <span class="text-emerald-400">${currentUser.uid}</span></div>
+                    <p class="text-xs text-gray-300 mt-0.5">Username: ${currentUser.name || 'N/A'} | Phone: ${currentUser.username}</p>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <span class="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1.5 rounded-xl font-extrabold border border-emerald-500/30 whitespace-nowrap shadow">Active Account</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-4 gap-2 text-center">
+                <a href="/deposit" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform">💰</span>
+                    <span class="text-[11px] font-bold text-blue-400">Recharge</span>
+                </a>
+                <a href="/withdrawal" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform">💸</span>
+                    <span class="text-[11px] font-bold text-purple-400">Withdraw</span>
+                </a>
+                <a href="/daily-signin" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform">🎁</span>
+                    <span class="text-[11px] font-bold ${alreadyCheckedIn ? 'text-gray-400' : 'text-yellow-400'}">${alreadyCheckedIn ? 'Claimed' : 'Sign In'}</span>
+                </a>
+                <a href="https://telegram.me/EarnXPro24x7Support" target="_blank" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform">🎧</span>
+                    <span class="text-[11px] font-bold text-emerald-400">Support</span>
+                </a>
+            </div>
+
+            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-5 rounded-3xl border border-gray-800 shadow-2xl space-y-2">
+                <h3 class="text-base font-extrabold text-blue-400 flex items-center gap-2"><span>🏢</span> About EarnX Pro & Global Enterprise Excellence</h3>
+                <div class="text-xs text-gray-300 leading-relaxed max-h-60 overflow-y-auto pr-1">
+                    <p>${topic1Text}</p>
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-5 rounded-3xl border border-gray-800 shadow-2xl space-y-2">
+                <h3 class="text-base font-extrabold text-yellow-400 flex items-center gap-2"><span>🚀</span> Advanced Security & Scalable Financial Vision</h3>
+                <div class="text-xs text-gray-300 leading-relaxed max-h-60 overflow-y-auto pr-1">
+                    <p>${topic2Text}</p>
+                </div>
+            </div>
+        </div>
+    `;
+    res.send(renderLayout('Home', content, req.session.user, req));
+});
+
+// Invest Page
+app.get('/invest', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+
+    let productsHtml = db.products.map((p, index) => {
+        const hasInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
+        
+        return `
+        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl">
+            ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-36 object-cover rounded-2xl mb-3 border border-gray-800">` : ''}
+            <div>
+                <h4 class="font-black text-lg text-emerald-400">${p.name}</h4>
+                <div class="flex justify-between items-center mt-2">
+                    <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
+                    <p class="text-sm text-yellow-400 font-bold">Return: ₹${p.returnAmount}</p>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Duration: ${p.durationMinutes >= 60 ? (p.durationMinutes / 60) + ' Hours' : p.durationMinutes + ' Minutes'}</p>
+            </div>
+            <form action="/invest" method="POST" class="mt-4">
+                <input type="hidden" name="productIndex" value="${index}">
+                <button type="submit" id="investBtn_${index}" class="w-full ${hasInvested ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-sm transition-all" ${hasInvested ? 'disabled' : ''}>${hasInvested ? 'Already Invested' : 'Invest Now'}</button>
+            </form>
+        </div>
+    `;
+    }).join('');
+
+    const content = `
+        <div class="space-y-6">
+            <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>📦</span> Investment Products</h2>
+            <div class="grid grid-cols-1 gap-4">
+                ${db.products.length ? productsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No products available currently.</p>'}
+            </div>
+        </div>
+    `;
+    res.send(renderLayout('Invest', content, req.session.user, req));
+});
+
+app.post('/invest', (req, res) => {
+    if (!req.session.user) return res.redirect('/login');
+    const { productIndex } = req.body;
+    let db = readDB();
+    let user = db.users.find(u => u.username === req.session.user.username);
+    let product = db.products[productIndex];
+
+    if (!user || !product) {
+        return res.redirect('/invest');
+    }
+
+    const productId = product._id;
+    const existingInvestment = (user.investments || []).find(inv => inv.productId === productId);
+    if (existingInvestment) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is product mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
+    }
+
+    if ((user.rechargeBalance || 0) >= product.price) {
+        user.rechargeBalance -= product.price;
+        if (!user.investments) user.investments = [];
+        
+        const endTime = Date.now() + (product.durationMinutes * 60 * 1000);
+        user.investments.push({
+            productName: product.name,
+            productId: productId,
+            amount: product.price,
+            returnAmount: product.returnAmount,
+            endTime: endTime,
+            status: 'Active',
+            date: new Date().toLocaleString()
+        });
+        writeDB(db);
+    }
+    res.redirect('/invest');
+});
+
+// Team Page
+app.get('/team', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+
+    const referralLink = `http://localhost:${PORT}/signup?ref=${currentUser.uid}`;
+
+    const content = `
+        <div class="space-y-6">
+            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-5 rounded-3xl border border-gray-800 shadow-2xl space-y-3">
+                <h3 class="text-sm font-black text-yellow-400 flex items-center gap-2"><span>🔗</span> Referral & Team Program</h3>
+                <p class="text-xs text-gray-300 leading-relaxed">Build your ultimate earning network, invite friends, and watch your passive income multiply effortlessly with every tier.</p>
+                <div class="flex items-center space-x-2 pt-1">
+                    <input type="text" readonly value="${referralLink}" class="w-full bg-gray-800/90 text-xs text-gray-300 p-3 rounded-xl border border-gray-700 focus:outline-none" id="refLinkInput">
+                    <button onclick="navigator.clipboard.writeText(document.getElementById('refLinkInput').value); alert('Copied!');" class="bg-gradient-to-r from-yellow-600 to-amber-600 text-white px-4 py-3 rounded-xl text-xs font-bold shadow-lg shadow-yellow-500/20">Copy</button>
+                </div>
+            </div>
+
+            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-5 rounded-3xl border border-gray-800 shadow-2xl space-y-4">
+                <h3 class="text-lg font-black text-blue-400">👥 Team Hierarchy Status</h3>
+                <p class="text-xs text-gray-300">Current Level: <span class="text-emerald-400 font-bold">Team ${currentUser.teamLevel || 'A'}</span></p>
                 
-                if(currentUser && currentUser.phone === ADMIN_PHONE) {
-                    if(document.getElementById('adminPanelModal') && !document.getElementById('adminPanelModal').classList.contains('hide')) {
-                        renderAdminData();
-                    }
+                <div class="border-t border-gray-800 pt-3 text-xs space-y-2.5 text-gray-300">
+                    <div class="bg-gray-800/80 p-3.5 rounded-xl border border-gray-700/50">
+                        <p class="font-bold text-yellow-400">Team A (Level 1)</p>
+                        <p class="text-gray-300 mt-0.5">Bonus: 1% on direct referrals' deposits.</p>
+                        <p class="text-gray-400 mt-1">Status: Active (Progress: ${currentUser.referralCount || 0}/25 to Team B)</p>
+                    </div>
+                    <div class="bg-gray-800/80 p-3.5 rounded-xl border border-gray-700/50">
+                        <p class="font-bold text-yellow-400">Team B (Level 2)</p>
+                        <p class="text-gray-300 mt-0.5">Bonus: 0.5% commission.</p>
+                        <p class="text-gray-400 mt-1">Requirement: 25 successful referrals with deposits in Team A, then 70 referrals to reach Team C.</p>
+                    </div>
+                    <div class="bg-gray-800/80 p-3.5 rounded-xl border border-gray-700/50">
+                        <p class="font-bold text-yellow-400">Team C (Level 3 - Unlimited)</p>
+                        <p class="text-gray-300 mt-0.5">Bonus: 0.10% commission on deposits. This is the final unlimited tier.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    res.send(renderLayout('Team', content, req.session.user, req));
+});
+
+// Notifications API endpoints
+app.get('/api/notifications/count', (req, res) => {
+    if (!req.session.user) return res.status(401).json({ count: 0 });
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    if (!currentUser || !currentUser.notifications) return res.json({ count: 0 });
+    
+    const unreadCount = currentUser.notifications.filter(n => !n.is_read).length;
+    res.json({ count: unreadCount });
+});
+
+app.post('/api/notifications/mark-read', (req, res) => {
+    try {
+        if (!req.session.user) return res.status(401).json({ success: false, error: "Unauthorized" });
+        let db = readDB();
+        let user = db.users.find(u => u.username === req.session.user.username);
+
+        if (user && user.notifications) {
+            user.notifications.forEach(n => {
+                n.is_read = true;
+            });
+            writeDB(db);
+        }
+
+        res.status(200).json({ success: true, message: "Notifications marked as read." });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Dedicated Sub-Pages for Account Menu Items
+app.get('/account/investments', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+
+    let myInvestmentsHtml = (currentUser.investments || []).map(inv => `
+        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl border border-gray-800 text-sm flex justify-between items-center mb-3 shadow-2xl">
+            <div>
+                <p class="font-bold text-blue-400 text-base">${inv.productName}</p>
+                <p class="text-gray-300 mt-1">Invested: ₹${inv.amount} | Return: ₹${inv.returnAmount}</p>
+                <p class="text-xs text-gray-400 mt-1">Status: <span class="${inv.status === 'Active' ? 'text-yellow-400 font-bold' : 'text-emerald-400 font-bold'}">${inv.status}</span></p>
+            </div>
+        </div>
+    `).join('');
+
+    const content = `
+        <div class="space-y-4 max-w-lg mx-auto">
+            <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>📈</span> My Active Investments</h2>
+            <div class="space-y-2">
+                ${myInvestmentsHtml.length ? myInvestmentsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No active investments found.</p>'}
+            </div>
+            <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
+        </div>
+    `;
+    res.send(renderLayout('My Active Investments', content, req.session.user, req));
+});
+
+app.get('/account/notifications', async (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+
+    if (currentUser && currentUser.notifications) {
+        currentUser.notifications.forEach(n => { n.is_read = true; });
+        writeDB(db);
+    }
+
+    let notificationsHtml = (currentUser.notifications || []).map(n => `
+        <div class="border border-gray-800 bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl text-xs space-y-1.5 shadow-2xl">
+            <div class="flex justify-between items-center text-cyan-400 font-bold text-sm">
+                <span>📢 ${n.title || 'System Notification'}</span>
+                <span class="text-[10px] text-gray-400">${n.created_at ? new Date(n.created_at).toLocaleString() : n.date}</span>
+            </div>
+            <p class="text-gray-200 leading-relaxed">${n.message}</p>
+        </div>
+    `).join('');
+
+    const content = `
+        <div class="space-y-4 max-w-lg mx-auto">
+            <h2 class="text-xl font-black text-cyan-400 flex items-center gap-2"><span>🔔</span> System Notifications</h2>
+            <div class="space-y-3">
+                ${notificationsHtml.length ? notificationsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No notifications found.</p>'}
+            </div>
+            <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
+        </div>
+    `;
+    res.send(renderLayout('System Notifications', content, req.session.user, req));
+});
+
+app.get('/account/deposits', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+
+    let depositHistoryHtml = (currentUser.deposits || []).map(d => `
+        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 p-4 rounded-3xl text-xs flex justify-between items-center mb-3 shadow-2xl">
+            <div>
+                <p class="text-sm">Amt: <b class="text-white text-base">₹${d.amount.toLocaleString()}</b> | UTR: <b class="text-emerald-400">${d.utr}</b></p>
+                <p class="text-gray-400 mt-1">Gateway: ${d.gateway || 'UPI'} | ${d.date}</p>
+            </div>
+            <div class="text-right">
+                <span class="${d.status === 'Completed' || d.status === 'Approved' ? 'text-emerald-400 font-bold' : d.status === 'Failed' || d.status === 'Rejected' ? 'text-red-400 font-bold' : 'text-yellow-400 font-bold'} text-sm">${d.status}</span>
+                ${d.screenshotUrl ? `<br><a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline mt-1 inline-block font-semibold">View SS</a>` : ''}
+            </div>
+        </div>
+    `).join('');
+
+    const content = `
+        <div class="space-y-4 max-w-lg mx-auto">
+            <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📜</span> Deposit History</h2>
+            <div class="space-y-2">
+                ${depositHistoryHtml.length ? depositHistoryHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No deposit history found.</p>'}
+            </div>
+            <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
+        </div>
+    `;
+    res.send(renderLayout('Deposit History', content, req.session.user, req));
+});
+
+app.get('/account/withdrawals', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+
+    let withdrawHistoryHtml = (currentUser.withdrawals || []).map(w => {
+        let fixedAmt = Math.round(w.amount * (1 - 0.12));
+        let statusClass = (w.status === 'Approved' || w.status === 'Completed') ? 'text-emerald-400 font-bold' : ((w.status === 'Failed' || w.status === 'Rejected') ? 'text-red-400 font-bold' : 'text-yellow-400 font-bold');
+        let displayStatus = (w.status === 'Approved') ? 'Completed' : w.status;
+
+        return `
+            <div class="withdrawal-history-card">
+                <div class="history-row final-amount text-sm">
+                    <span class="label">Withdrawal Amount:</span>
+                    <span class="value">₹${fixedAmt}</span> 
+                </div>
+                <div class="history-meta">
+                    <small>Bank A/C: ${w.bankDetails ? w.bankDetails.accNo : 'N/A'}</small>
+                    <span class="status ${statusClass.includes('emerald') ? 'completed' : ''} ${statusClass}">${displayStatus}</span>
+                </div>
+                <div class="history-date">
+                    <small>${w.date}</small>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const content = `
+        <div class="space-y-4 max-w-lg mx-auto">
+            <h2 class="text-xl font-black text-purple-400 flex items-center gap-2"><span>📜</span> Withdrawal History</h2>
+            <div class="space-y-2">
+                ${withdrawHistoryHtml.length ? withdrawHistoryHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No withdrawal requests found.</p>'}
+            </div>
+            <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
+        </div>
+    `;
+    res.send(renderLayout('Withdrawal History', content, req.session.user, req));
+});
+
+// Account Page
+app.get('/account', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    const unreadCountInitial = (currentUser.notifications || []).filter(n => !n.is_read).length;
+
+    const content = `
+        <div class="flex items-center justify-center py-2">
+            <div class="inline-flex items-center gap-3 bg-gradient-to-br from-gray-900/95 to-slate-900/95 backdrop-blur-2xl border border-emerald-500/20 px-5 py-2.5 rounded-2xl shadow-2xl">
+                <div class="relative w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30">
+                    <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
+                        <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-xl tracking-tighter">EX</span>
+                    </div>
+                </div>
+                <div class="flex flex-col text-left">
+                    <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
+                        EarnX <span class="text-cyan-400 font-extrabold">Pro</span>
+                    </span>
+                    <span class="text-[9px] uppercase tracking-widest text-emerald-400/80 font-bold -mt-1">Secure Ecosystem</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="account-container">
+            <div class="user-id-card">
+                <div class="uid-text text-sm font-bold flex justify-between items-center">
+                    <span>UID: <span class="text-emerald-400">${currentUser.uid}</span></span>
+                    <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/30">Verified</span>
+                </div>
+                <div class="account-status text-xs text-gray-300 mt-2">Username: ${currentUser.name || 'N/A'} &bull; Phone: ${currentUser.username}</div>
+            </div>
+
+            <div class="balance-cards-grid">
+                <div class="balance-card recharge">
+                    <span class="currency">₹${(currentUser.rechargeBalance || 0).toFixed(2)}</span>
+                    <span class="label text-xs text-gray-400 block mt-1 font-semibold">Recharge Balance</span>
+                </div>
+                <div class="balance-card withdraw">
+                    <span class="currency">₹${(currentUser.withdrawBalance || 0).toFixed(2)}</span>
+                    <span class="label text-xs text-gray-400 block mt-1 font-semibold">Withdraw Balance</span>
+                </div>
+            </div>
+
+            <div class="action-buttons-stack">
+                <a href="/deposit" class="deposit-btn">💰 Deposit Funds</a>
+                <a href="/withdrawal" class="withdraw-btn">💸 Withdraw Funds</a>
+                <a href="https://telegram.me/EarnXPro24x7Support" target="_blank" class="btn-support">🎧 Customer Care Support</a>
+            </div>
+
+            <div class="space-y-3 mt-4 action-buttons-stack">
+                <a href="/account/investments" class="menu-link-btn">
+                    <span class="flex items-center gap-3"><span>📈</span> My Active Investments</span>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+
+                <a href="/account/notifications" class="menu-link-btn">
+                    <span class="flex items-center gap-3">
+                        <span>🔔</span> System Notifications 
+                        ${unreadCountInitial > 0 ? `<span class="bg-cyan-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full">${unreadCountInitial}</span>` : ''}
+                    </span>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+
+                <a href="/account/deposits" class="menu-link-btn">
+                    <span class="flex items-center gap-3"><span>📜</span> View Deposit History</span>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+
+                <a href="/account/withdrawals" class="menu-link-btn">
+                    <span class="flex items-center gap-3"><span>📜</span> View Withdrawal History</span>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+            </div>
+        </div>
+    `;
+    res.send(renderLayout('Account Dashboard', content, req.session.user, req));
+});
+
+// Deposit Page
+app.get('/deposit', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let user = db.users.find(u => u.username === req.session.user.username);
+    
+    let assignedUpi = getRandomUpiId();
+
+    let historyHtml = (user.deposits || []).map(d => {
+        let statusColor = 'text-yellow-400';
+        let displayStatus = d.status;
+        if (d.status === 'Approved' || d.status === 'Completed') {
+            statusColor = 'text-emerald-400';
+            displayStatus = 'Completed';
+        } else if (d.status === 'Rejected' || d.status === 'Failed') {
+            statusColor = 'text-red-400';
+            displayStatus = 'Failed';
+        }
+
+        return `
+            <div class="bg-gray-800/80 border border-gray-700/80 p-3 rounded-xl text-xs mb-2 flex justify-between items-center shadow">
+                <div>
+                    <p>Amt: <b class="text-white">₹${d.amount}</b> | UTR: <b class="text-emerald-400">${d.utr}</b></p>
+                    <p class="text-gray-400 mt-0.5">Gateway: ${d.gateway || 'UPI'} | ${d.date}</p>
+                </div>
+                <div>
+                    <span class="px-2.5 py-1 rounded-lg font-bold ${statusColor} bg-gray-900/50">${displayStatus}</span>
+                    ${d.screenshotUrl ? `<br><a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline mt-1 inline-block font-semibold">View SS</a>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const content = `
+        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4 deposit-page">
+            <h2 class="text-xl font-black text-emerald-400">Deposit Funds (₹100 - ₹50,000)</h2>
+
+            <div class="deposit-warning">
+                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below. If you make a payment from any third-party wallet or unverified third-party app, your deposit will <strong>not</strong> be updated or credited to your recharge balance.
+            </div>
+            
+            <div id="step-amount">
+                <form id="initDepositForm" class="space-y-3">
+                    <input type="number" id="deposit_amount" placeholder="Enter Amount (Min 100 - Max 50000)" min="100" max="50000" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500">
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-blue-500/20 transition-all">Proceed to Pay</button>
+                </form>
+            </div>
+
+            <div id="step-gateway" style="display:none;" class="space-y-4">
+                <div class="bg-yellow-500/10 border border-yellow-500/30 text-yellow-300 p-3 rounded-xl text-center text-sm font-bold">
+                    ⏱️ Time Remaining: <span id="timer">12:00</span>
+                </div>
+                
+                <div class="upi-box bg-gray-800/90 p-3.5 rounded-xl border border-gray-700 flex justify-between items-center shadow-inner">
+                    <span class="text-xs">Pay to UPI ID: <strong id="targetUpi" class="text-emerald-400 text-sm font-bold">${assignedUpi}</strong></span>
+                    <button onclick="navigator.clipboard.writeText('${assignedUpi}'); alert('UPI ID Copied!');" class="bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white text-xs px-3.5 py-2 rounded-xl font-bold shadow">Copy UPI</button>
+                </div>
+
+                <div class="upi-options-grid grid grid-cols-2 gap-2.5">
+                    <a href="tez://upi/pay?pa=${assignedUpi}&pn=EarnXPro" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">Google Pay</a>
+                    <a href="phonepe://pay?pa=${assignedUpi}&pn=EarnXPro" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">PhonePe</a>
+                    <a href="paytmmp://pay?pa=${assignedUpi}&pn=EarnXPro" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">Paytm</a>
+                    <a href="mobikwik://pay?pa=${assignedUpi}&pn=EarnXPro" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">MobiKwik</a>
+                </div>
+
+                <form action="/deposit" method="POST" enctype="multipart/form-data" class="space-y-3" id="depositForm">
+                    <input type="hidden" name="amount" id="final_amount">
+                    <input type="hidden" name="gateway" value="${assignedUpi}">
+                    <input type="text" name="utr" id="utrInput" placeholder="Enter 12-digit UTR" pattern="[0-9]{12}" maxlength="12" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500">
+                    <small id="utrError" style="color: #ff5252; display: none;">UTR must be exactly 12 numeric digits.</small>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-400 mb-1">Upload Payment Screenshot (Required)</label>
+                        <input type="file" name="screenshot" id="screenshotFile" accept="image/*" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-2.5 text-white text-xs file:mr-4 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-gray-700 file:text-gray-200">
+                    </div>
+                    <button type="submit" id="submitProofBtn" class="submit-proof-btn w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Submit Payment Proof</button>
+                </form>
+            </div>
+
+            <hr class="border-gray-800 my-4">
+            <h3 class="font-bold text-sm text-gray-300">Deposit History</h3>
+            <div class="max-h-48 overflow-y-auto space-y-2">
+                ${historyHtml.length ? historyHtml : '<p class="text-xs text-gray-400 text-center py-4">No deposit history found.</p>'}
+            </div>
+
+            <a href="/account" class="block text-center text-xs text-gray-400 mt-3 hover:text-white underline">Back to Account</a>
+        </div>
+
+        <script>
+            let timerInterval;
+            document.getElementById('initDepositForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                let amt = document.getElementById('deposit_amount').value;
+                if(amt < 100 || amt > 50000) {
+                    alert('Deposit amount must be between ₹100 and ₹50,000');
+                    return;
                 }
+                document.getElementById('final_amount').value = amt;
+                document.getElementById('step-amount').style.display = 'none';
+                document.getElementById('step-gateway').style.display = 'block';
+
+                let timeLeft = 12 * 60;
+                timerInterval = setInterval(() => {
+                    let min = Math.floor(timeLeft / 60);
+                    let sec = timeLeft % 60;
+                    document.getElementById('timer').textContent = min + ':' + (sec < 10 ? '0' : '') + sec;
+                    if(timeLeft <= 0) {
+                        clearInterval(timerInterval);
+                        alert('Session expired! Please restart deposit.');
+                        location.reload();
+                    }
+                    timeLeft--;
+                }, 1000);
+            });
+
+            document.getElementById('submitProofBtn').addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                const utrVal = document.getElementById('utrInput').value.trim();
+                const utrRegex = /^[0-9]{12}$/;
+                if (!utrRegex.test(utrVal)) {
+                    document.getElementById('utrError').style.display = 'block';
+                    return;
+                }
+                document.getElementById('utrError').style.display = 'none';
+
+                alert("Please wait patiently while our system is checking the payment.");
+
+                const formData = new FormData();
+                formData.append('amount', document.getElementById('final_amount').value);
+                formData.append('gateway', '${assignedUpi}');
+                formData.append('utr', utrVal);
+                formData.append('screenshot', document.getElementById('screenshotFile').files[0]);
+
+                try {
+                    const response = await fetch('/deposit', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if(response.redirected) {
+                        window.location.href = response.url;
+                    } else {
+                        window.location.reload();
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            });
+        </script>
+    `;
+    res.send(renderLayout('Deposit', content, req.session.user, req));
+});
+
+app.post('/deposit', upload.single('screenshot'), (req, res) => {
+    if (!req.session.user) return res.redirect('/login');
+    const { amount, utr, gateway } = req.body;
+    
+    const utrRegex = /^[0-9]{12}$/; 
+    if (!utrRegex.test(utr)) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UTR! Please enter a valid 12-digit numeric reference number.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
+    }
+
+    let db = readDB();
+    let utrExists = false;
+    db.users.forEach(u => {
+        if (u.deposits) {
+            if (u.deposits.some(d => d.utr === utr)) {
+                utrExists = true;
+            }
+        }
+    });
+
+    if (utrExists) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">This UTR / Transaction ID has already been submitted! Please enter a unique UTR.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
+    }
+
+    if (!req.file) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Payment screenshot is mandatory!</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
+    }
+
+    let user = db.users.find(u => u.username === req.session.user.username);
+    if (user) {
+        if (!user.deposits) user.deposits = [];
+        user.deposits.push({ 
+            amount: parseFloat(amount), 
+            utr, 
+            gateway: gateway || 'UPI',
+            screenshotUrl: `/uploads/${req.file.filename}`,
+            status: 'Pending', 
+            date: new Date().toLocaleString() 
+        });
+        writeDB(db);
+    }
+    res.redirect('/deposit');
+});
+
+// Withdrawal Page
+app.get('/withdrawal', (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let user = db.users.find(u => u.username === req.session.user.username);
+
+    let historyHtml = (user.withdrawals || []).map(w => {
+        let fixedAmt = Math.round(w.amount * (1 - 0.12));
+        let statusClass = (w.status === 'Approved' || w.status === 'Completed') ? 'text-emerald-400 font-bold' : ((w.status === 'Failed' || w.status === 'Rejected') ? 'text-red-400 font-bold' : 'text-yellow-400 font-bold');
+        let displayStatus = (w.status === 'Approved') ? 'Completed' : w.status;
+
+        return `
+            <div class="withdrawal-history-card">
+                <div class="history-row final-amount text-sm">
+                    <span class="label">Withdrawal Amount:</span>
+                    <span class="value">₹${fixedAmt}</span> 
+                </div>
+                <div class="history-meta">
+                    <small>Bank A/C: ${w.bankDetails ? w.bankDetails.accNo : 'N/A'}</small>
+                    <span class="status ${statusClass.includes('emerald') ? 'completed' : ''} ${statusClass}">${displayStatus}</span>
+                </div>
+                <div class="history-date">
+                    <small>${w.date}</small>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    const b = user.bankDetails || { name: '', accNo: '', ifsc: '', phone: '' };
+    const hasSavedBank = b.accNo && b.accNo.trim() !== '';
+
+    let bankSectionHTML = '';
+    if (hasSavedBank) {
+        bankSectionHTML = `
+            <div class="locked-bank-box">
+                <p><strong>Linked Bank Account (Verified & Locked)</strong></p>
+                <p class="text-xs text-gray-300 mt-1">Holder Name: ${b.name}</p>
+                <p class="text-xs text-gray-300">Account No: ****${b.accNo.slice(-4)}</p>
+                <p class="text-xs text-gray-300">IFSC Code: ${b.ifsc}</p>
+                <span class="lock-badge mt-2 inline-block">🔒 Permanent Account Bound</span>
+            </div>
+        `;
+    } else {
+        bankSectionHTML = `
+            <div class="bank-form space-y-2.5">
+                <input type="text" name="accName" placeholder="Account Holder Name" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                <input type="text" name="accNo" placeholder="Enter Bank Account Number" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                <input type="text" name="ifsc" placeholder="Enter IFSC Code" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                <input type="text" name="phone" placeholder="Registered Phone Number" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+            </div>
+        `;
+    }
+
+    const content = `
+        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4">
+            <h2 class="text-xl font-black text-purple-400">Withdraw Funds (₹100 - ₹50,000)</h2>
+            
+            <div class="bg-gray-800/80 p-3.5 rounded-xl text-xs text-emerald-400 font-bold border border-gray-700">
+                Available Withdraw Balance: ₹${(user.withdrawBalance || 0).toFixed(2)}
+            </div>
+
+            <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300">
+                <p class="font-bold mb-1">⚠ Withdrawal Tax Policy Notice:</p>
+                <p class="text-gray-300">A mandatory 12% tax fee will be applied to every withdrawal transaction processed through the platform. Please verify your payout details before submitting.</p>
+            </div>
+
+            <form id="withdrawalForm" class="space-y-3">
+                ${bankSectionHTML}
+                <div class="form-group pt-1">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Withdrawal Amount (₹)</label>
+                    <input type="number" id="withdrawalAmount" name="amount" min="100" max="50000" placeholder="Enter amount" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                </div>
+                <div class="form-group">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Confirm Signup Password</label>
+                    <input type="password" id="signupPassword" name="signupPasswordVerify" placeholder="Enter password created during signup" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                </div>
+                <button type="button" id="submitWithdrawalBtn" class="btn-submit w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-purple-500/20 transition-all text-sm">Submit Withdrawal / Save Bank</button>
+            </form>
+
+            <hr class="border-gray-800 my-4">
+            <h3 class="font-bold text-sm text-gray-300">Withdrawal History</h3>
+            <div class="max-h-48 overflow-y-auto space-y-2">
+                ${historyHtml.length ? historyHtml : '<p class="text-xs text-gray-400 text-center py-4">No withdrawal requests found.</p>'}
+            </div>
+
+            <a href="/account" class="block text-center text-xs text-gray-400 mt-3 hover:text-white underline">Back to Account</a>
+        </div>
+
+        <script>
+            document.getElementById('submitWithdrawalBtn').addEventListener('click', async () => {
+                const amount = document.getElementById('withdrawalAmount').value;
+                const password = document.getElementById('signupPassword').value;
+                const userId = '${user.uid}';
+
+                const accNameInput = document.querySelector('input[name="accName"]');
+                const accNoInput = document.querySelector('input[name="accNo"]');
+                const ifscInput = document.querySelector('input[name="ifsc"]');
+                const phoneInput = document.querySelector('input[name="phone"]');
+
+                const bodyData = {
+                    userId,
+                    amount,
+                    password,
+                    accName: accNameInput ? accNameInput.value : '',
+                    accNo: accNoInput ? accNoInput.value : '',
+                    ifsc: ifscInput ? ifscInput.value : '',
+                    phone: phoneInput ? phoneInput.value : ''
+                };
+
+                try {
+                    const response = await fetch('/api/withdrawal', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(bodyData)
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        alert("Withdrawal has been submitted, please wait 24 hours to get the amount in your bank.");
+                        location.reload();
+                    } else {
+                        alert(data.message || "Error submitting withdrawal");
+                    }
+                } catch (err) {
+                    console.error(err);
+                }
+            });
+        </script>
+    `;
+    res.send(renderLayout('Withdraw', content, req.session.user, req));
+});
+
+app.post('/api/withdrawal', async (req, res) => {
+    try {
+        const { userId, amount, password, accName, accNo, ifsc, phone } = req.body;
+        let db = readDB();
+        let user = db.users.find(u => u.uid === userId || u.username === req.session.user.username);
+        
+        if (!user || user.password !== password) {
+            return res.status(400).json({ success: false, message: "Incorrect signup password verification!" });
+        }
+
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const dailyWithdrawalsCount = (user.withdrawals || []).filter(w => {
+            return new Date(w.date) >= todayStart;
+        }).length;
+
+        if (dailyWithdrawalsCount >= 2) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Daily limit reached. You can only make a maximum of 2 withdrawal requests per day." 
+            });
+        }
+
+        let amtNum = parseFloat(amount);
+        if (!user.bankDetails || !user.bankDetails.accNo) {
+            if (accNo) {
+                user.bankDetails = { name: accName, accNo, ifsc, phone };
+            }
+        }
+
+        if ((user.withdrawBalance || 0) >= amtNum && amtNum >= 100 && amtNum <= 50000) {
+            user.withdrawBalance -= amtNum;
+            if (!user.withdrawals) user.withdrawals = [];
+            user.withdrawals.push({ 
+                amount: amtNum, 
+                bankDetails: user.bankDetails,
+                status: 'Pending', 
+                date: new Date().toLocaleString() 
+            });
+            writeDB(db);
+            
+            return res.status(200).json({
+                success: true,
+                message: "Withdrawal has been submitted, please wait 24 hours to get the amount in your bank."
+            });
+        } else {
+            return res.status(400).json({ success: false, message: "Invalid amount or insufficient withdraw balance!" });
+        }
+
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/withdrawal', (req, res) => {
+    if (!req.session.user) return res.redirect('/login');
+    const { amount, accName, accNo, ifsc, phone, signupPasswordVerify } = req.body;
+    let db = readDB();
+    let user = db.users.find(u => u.username === req.session.user.username);
+    
+    if (!user || user.password !== signupPasswordVerify) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Incorrect signup password verification!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+    }
+
+    let amtNum = parseFloat(amount);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const dailyCount = (user.withdrawals || []).filter(w => new Date(w.date) >= todayStart).length;
+    if (dailyCount >= 2) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Daily limit reached. Max 2 withdrawal requests per day.</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+    }
+
+    if (!user.bankDetails || !user.bankDetails.accNo) {
+        if (accNo) {
+            user.bankDetails = { name: accName, accNo, ifsc, phone };
+        }
+    }
+
+    if ((user.withdrawBalance || 0) >= amtNum && amtNum >= 100 && amtNum <= 50000) {
+        user.withdrawBalance -= amtNum;
+        if (!user.withdrawals) user.withdrawals = [];
+        user.withdrawals.push({ 
+            amount: amtNum, 
+            bankDetails: user.bankDetails,
+            status: 'Pending', 
+            date: new Date().toLocaleString() 
+        });
+    }
+    writeDB(db);
+    res.redirect('/withdrawal');
+});
+
+// ==================== ADMIN PANEL ====================
+app.get('/admin', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    let db = readDB();
+    let tab = req.query.tab || 'users';
+
+    let regularUsers = db.users.filter(u => !u.is_admin);
+    let usersHtml = regularUsers.map(u => `
+        <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
+            <div class="flex justify-between items-center mb-2">
+                <div>
+                    <p class="font-bold text-yellow-400">UID: ${u.uid} | Username: ${u.name || 'N/A'} | Phone: ${u.username}</p>
+                    <p class="text-emerald-400 text-xs mt-0.5">Recharge Bal: ₹${(u.rechargeBalance || 0).toFixed(2)} | Withdraw Bal: ₹${(u.withdrawBalance || 0).toFixed(2)}</p>
+                </div>
+                <form action="/admin/add-balance" method="POST" class="flex space-x-1">
+                    <input type="hidden" name="username" value="${u.username}">
+                    <input type="number" name="amount" placeholder="+/- Amt" class="w-20 bg-gray-900 text-white p-2 rounded-xl text-xs border border-gray-700" required>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Update</button>
+                </form>
+            </div>
+            <div class="bg-gray-900/80 p-3 rounded-xl text-xs mt-2 text-gray-300 border border-gray-800">
+                <p class="text-blue-400 font-semibold mb-1">Bank Details:</p>
+                <p>Name: ${u.bankDetails?.name || 'N/A'} | A/C: ${u.bankDetails?.accNo || 'N/A'} | IFSC: ${u.bankDetails?.ifsc || 'N/A'}</p>
+                <p class="text-gray-400 mt-1">Referrals: ${u.referralCount || 0}</p>
+            </div>
+        </div>
+    `).join('');
+
+    let depositsHtml = [];
+    db.users.forEach(u => {
+        if (u.deposits) {
+            u.deposits.forEach((d, dIdx) => {
+                if (d.status === 'Pending') {
+                    depositsHtml.push(`
+                        <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
+                            <div>
+                                <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
+                                <p class="text-gray-300">Amt: ₹${d.amount} | UTR: <b class="text-emerald-400">${d.utr}</b></p>
+                                <p class="text-xs text-gray-400 mt-1">${d.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
+                                ${d.screenshotUrl ? `<a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline text-xs font-bold inline-block mt-2">🔍 Open Screenshot</a>` : ''}
+                            </div>
+                            <div class="flex space-x-2">
+                                <form action="/admin/action-deposit" method="POST">
+                                    <input type="hidden" name="username" value="${u.username}">
+                                    <input type="hidden" name="index" value="${dIdx}">
+                                    <input type="hidden" name="action" value="approve">
+                                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Approve</button>
+                                </form>
+                                <form action="/admin/action-deposit" method="POST">
+                                    <input type="hidden" name="username" value="${u.username}">
+                                    <input type="hidden" name="index" value="${dIdx}">
+                                    <input type="hidden" name="action" value="reject">
+                                    <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
+                                </form>
+                            </div>
+                        </div>
+                    `);
+                }
+            });
+        }
+    });
+
+    let withdrawalsHtml = [];
+    db.users.forEach(u => {
+        if (u.withdrawals) {
+            u.withdrawals.forEach((w, wIdx) => {
+                if (w.status === 'Pending') {
+                    withdrawalsHtml.push(`
+                        <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
+                            <div>
+                                <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
+                                <p class="text-gray-300">Amt: ₹${w.amount} | A/C: <b class="text-purple-400">${w.bankDetails?.accNo}</b></p>
+                                <p class="text-xs text-gray-400 mt-1">${w.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
+                            </div>
+                            <div class="flex space-x-2">
+                                <form action="/admin/action-withdrawal" method="POST">
+                                    <input type="hidden" name="username" value="${u.username}">
+                                    <input type="hidden" name="index" value="${wIdx}">
+                                    <input type="hidden" name="action" value="approve">
+                                    <button type="submit" class="bg-purple-600 hover:bg-purple-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Approve</button>
+                                </form>
+                                <form action="/admin/action-withdrawal" method="POST">
+                                    <input type="hidden" name="username" value="${u.username}">
+                                    <input type="hidden" name="index" value="${wIdx}">
+                                    <input type="hidden" name="action" value="reject">
+                                    <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
+                                </form>
+                            </div>
+                        </div>
+                    `);
+                }
+            });
+        }
+    });
+
+    let productListHtml = db.products.map((p, pIdx) => {
+        let investorsList = [];
+        db.users.forEach(u => {
+            if (u.investments) {
+                u.investments.forEach(inv => {
+                    if (inv.productId === p._id) {
+                        investorsList.push(`<span class="bg-gray-900 text-xs px-2.5 py-1 rounded-lg text-cyan-300 border border-gray-800 font-medium">UID: ${u.uid} (₹${inv.amount}) - ${inv.status}</span>`);
+                    }
+                });
             }
         });
 
-        function saveDB() {
-            rtdb.ref('/').set(db);
-        }
-
-        window.onload = function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const refParam = urlParams.get('ref');
-            if(refParam) {
-                signupRefBy = refParam;
-                document.getElementById('signupRefDisplay').innerText = refParam;
-                switchAuthTab('signup');
-            }
-
-            checkProductExpiries();
-            if(currentUser) {
-                if(currentUser.phone === ADMIN_PHONE) {
-                    openAdminPanel();
-                } else {
-                    showDashboard();
-                }
-            }
-        };
-
-        function calculateVipLevel(amount) {
-            if(amount >= 100000) return 10;
-            if(amount >= 45000) return 9;
-            if(amount >= 35000) return 8;
-            if(amount >= 25000) return 7;
-            if(amount >= 15000) return 6;
-            if(amount >= 10000) return 5;
-            if(amount >= 5600) return 4;
-            if(amount >= 3500) return 3;
-            if(amount >= 1500) return 2;
-            if(amount >= 200) return 1;
-            return 0;
-        }
-
-        function checkProductExpiries() {
-            let now = Date.now();
-            let updatedProducts = [];
-            db.products.forEach(p => {
-                if(!p.createdAt || (now - p.createdAt < 24 * 60 * 60 * 1000)) {
-                    updatedProducts.push(p);
-                }
-            });
-            db.products = updatedProducts;
-
-            db.investments.forEach(inv => {
-                if(!inv.matured && now >= inv.maturityTime) {
-                    inv.matured = true;
-                    let u = db.users.find(user => user.phone === inv.phone);
-                    if(u) {
-                        u.balance += inv.returnAmount;
-                        u.withdrawBal += inv.returnAmount;
-                    }
-                }
-            });
-        }
-
-        function switchAuthTab(tab) {
-            if(tab === 'login') {
-                document.getElementById('loginFormContainer').classList.remove('hide');
-                document.getElementById('signupFormContainer').classList.add('hide');
-                document.getElementById('loginTabBtn').className = "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition";
-                document.getElementById('signupTabBtn').className = "flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition";
-            } else {
-                document.getElementById('signupFormContainer').classList.remove('hide');
-                document.getElementById('loginFormContainer').classList.add('hide');
-                document.getElementById('signupTabBtn').className = "flex-1 py-2 text-sm font-semibold rounded-md bg-white shadow text-emerald-600 transition";
-                document.getElementById('loginTabBtn').className = "flex-1 py-2 text-sm font-semibold rounded-md text-gray-600 transition";
-            }
-        }
-
-        function sendSignupOTP() {
-            let phone = document.getElementById('signupPhone').value;
-            if(!phone || phone.length < 10) { alert('Please enter a valid phone number'); return; }
-            let existing = db.users.find(u => u.phone === phone);
-            if(existing) { alert('This mobile number is already registered!'); return; }
-            alert('OTP sent successfully: 1234');
-            document.getElementById('signupOtp').value = "1234";
-        }
-
-        function handleSignup() {
-            let phone = document.getElementById('signupPhone').value;
-            let otp = document.getElementById('signupOtp').value;
-            let password = document.getElementById('signupPassword').value;
-
-            if(!phone || !otp || !password) { alert('All fields are required'); return; }
-            if(otp !== "1234") { alert('Invalid OTP'); return; }
-            let existing = db.users.find(u => u.phone === phone);
-            if(existing) { alert('Number already registered!'); return; }
-
-            let newUser = {
-                phone: phone,
-                password: password,
-                balance: 0,
-                rechargeBal: 0,
-                withdrawBal: 0,
-                vipLevel: 0,
-                bank: null,
-                lastWithdrawDate: null,
-                lastSigninDate: null,
-                referredBy: signupRefBy || null
-            };
-
-            db.users.push(newUser);
-            saveDB();
-            alert('Signup successful! Please login.');
-            switchAuthTab('login');
-        }
-
-        function handleLogin() {
-            let phone = document.getElementById('loginPhone').value;
-            let password = document.getElementById('loginPassword').value;
-
-            if(phone === ADMIN_PHONE && password === ADMIN_PASS) {
-                currentUser = { phone: ADMIN_PHONE, name: "System Control", vipLevel: "SYSTEM" };
-                openAdminPanel();
-                return;
-            }
-
-            let user = db.users.find(u => u.phone === phone && u.password === password);
-            if(!user) { alert('Invalid mobile number or password'); return; }
-
-            currentUser = user;
-            if(currentUser.lastSigninDate === undefined) currentUser.lastSigninDate = null;
-            localStorage.setItem('earnx_current_user', JSON.stringify(currentUser));
-            showDashboard();
-        }
-
-        function handleLogout() {
-            currentUser = null;
-            localStorage.removeItem('earnx_current_user');
-            document.getElementById('dashboardScreen').classList.add('hide');
-            document.getElementById('authScreen').classList.remove('hide');
-            document.getElementById('adminPanelModal').classList.add('hide');
-        }
-
-        function showDashboard() {
-            checkProductExpiries();
-            document.getElementById('authScreen').classList.add('hide');
-            document.getElementById('dashboardScreen').classList.remove('hide');
-            showDashboardDataOnly();
-        }
-
-        function showDashboardDataOnly() {
-            document.getElementById('headerUsername').innerText = "User_" + currentUser.phone.slice(-4);
-            document.getElementById('headerUserId').innerText = Math.floor(100000 + Math.random() * 900000);
-            document.getElementById('userBalanceDisplay').innerText = currentUser.balance.toFixed(2);
-            document.getElementById('userRechargeBal').innerText = "₹" + (currentUser.rechargeBal || 0).toFixed(2);
-            document.getElementById('userWithdrawBal').innerText = "₹" + currentUser.withdrawBal.toFixed(2);
-            
-            let vipBadgeText = currentUser.vipLevel > 0 ? "VIP " + currentUser.vipLevel : "VIP 0";
-            document.getElementById('userVipBadge').innerText = vipBadgeText;
-            if(document.getElementById('modalCurrentVipBadge')) {
-                document.getElementById('modalCurrentVipBadge').innerText = vipBadgeText;
-            }
-
-            let uniqueLink = window.location.origin + window.location.pathname + "?ref=" + currentUser.phone;
-            document.getElementById('userUniqueInviteLink').value = uniqueLink;
-
-            renderProducts();
-            renderUserHistory();
-            renderTeamData();
-        }
-
-        function copyUniqueInviteLink() {
-            let linkInput = document.getElementById('userUniqueInviteLink');
-            linkInput.select();
-            navigator.clipboard.writeText(linkInput.value);
-            alert('Unique invite link copied successfully!');
-        }
-
-        function claimDailySignin() {
-            let todayStr = new Date().toDateString();
-            if(currentUser.lastSigninDate === todayStr) {
-                alert('You have already claimed today\'s Daily Sign-in! Please try again tomorrow.');
-                return;
-            }
-
-            currentUser.lastSigninDate = todayStr;
-            currentUser.balance += 4;
-            currentUser.rechargeBal = (currentUser.rechargeBal || 0) + 4;
-            
-            let uIndex = db.users.findIndex(u => u.phone === currentUser.phone);
-            if(uIndex !== -1) db.users[uIndex] = currentUser;
-            saveDB();
-
-            alert('Congratulations! ₹4 successfully added to your Recharge Balance.');
-            showDashboardDataOnly();
-        }
-
-        function openVipModal() {
-            if(currentUser && document.getElementById('modalCurrentVipBadge')) {
-                document.getElementById('modalCurrentVipBadge').innerText = currentUser.vipLevel > 0 ? "VIP " + currentUser.vipLevel : "VIP 0";
-            }
-            document.getElementById('vipStatusModal').classList.remove('hide');
-        }
-
-        function closeVipModal() {
-            document.getElementById('vipStatusModal').classList.add('hide');
-        }
-
-        function switchTab(tabName) {
-            ['viewHome', 'viewInvest', 'viewTeam', 'viewAccount', 'viewRecharge', 'viewWithdraw'].forEach(id => {
-                document.getElementById(id).classList.add('hide');
-            });
-            ['navHomeBtn', 'navInvestBtn', 'navTeamBtn', 'navAccountBtn'].forEach(id => {
-                document.getElementById(id).className = "flex flex-col items-center text-gray-500 font-semibold text-xs";
-            });
-
-            if(tabName === 'home') {
-                document.getElementById('viewHome').classList.remove('hide');
-                document.getElementById('navHomeBtn').className = "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-            } else if(tabName === 'invest') {
-                document.getElementById('viewInvest').classList.remove('hide');
-                document.getElementById('navInvestBtn').className = "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-                renderProducts();
-            } else if(tabName === 'team') {
-                document.getElementById('viewTeam').classList.remove('hide');
-                document.getElementById('navTeamBtn').className = "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-                renderTeamData();
-            } else if(tabName === 'account') {
-                document.getElementById('viewAccount').classList.remove('hide');
-                document.getElementById('navAccountBtn').className = "flex flex-col items-center text-emerald-600 font-semibold text-xs";
-            } else if(tabName === 'recharge') {
-                document.getElementById('viewRecharge').classList.remove('hide');
-            } else if(tabName === 'withdraw') {
-                document.getElementById('viewWithdraw').classList.remove('hide');
-                checkBankStatusUI();
-                checkDailyWithdrawLimit();
-            }
-        }
-
-        function switchInvestSubTab(subTab) {
-            currentInvestSubTab = subTab;
-            ['VIP 1', 'VIP 2', 'BENEFITS'].forEach((t, index) => {
-                let btnId = 'invSubTab' + (index + 1);
-                if(t === subTab) {
-                    document.getElementById(btnId).className = "flex-1 py-2 rounded bg-emerald-600 text-white transition text-center";
-                } else {
-                    document.getElementById(btnId).className = "flex-1 py-2 rounded text-gray-600 transition text-center";
-                }
-            });
-            renderProducts();
-        }
-
-        function renderTeamData() {
-            let myReferrals = db.users.filter(u => u.referredBy === currentUser.phone);
-            let totalCount = myReferrals.length;
-            document.getElementById('teamTotalCount').innerText = totalCount;
-
-            let tierName = "Team A (4%)";
-            let commissionRate = 0.04;
-            if(totalCount >= 150 && totalCount < 1500) {
-                tierName = "Team C (1%)";
-                commissionRate = 0.01;
-            } else if(totalCount >= 25 && totalCount < 150) {
-                tierName = "Team B (2%)";
-                commissionRate = 0.02;
-            } else if(totalCount >= 1500) {
-                tierName = "Team C (Max 1%)";
-                commissionRate = 0.01;
-            }
-            document.getElementById('teamCurrentTier').innerText = tierName;
-
-            let teamHtml = "";
-            let myTeamComms = db.teamCommissions.filter(c => c.earnerPhone === currentUser.phone);
-            if(myTeamComms.length === 0) {
-                teamHtml = '<p class="text-gray-400 text-center py-2">No team deposit records yet.</p>';
-            } else {
-                myTeamComms.forEach(c => {
-                    teamHtml += `<div class="bg-gray-50 p-2.5 rounded flex justify-between items-center">
-                        <div>
-                            <div class="font-bold">Member: ${c.memberPhone}</div>
-                            <div class="text-[10px] text-gray-400">Deposit: ₹${c.depositAmount} | Tier: ${c.tier} (${c.rate}%)</div>
-                        </div>
-                        <span class="font-bold text-emerald-600">+₹${c.commissionEarned.toFixed(2)}</span>
-                    </div>`;
-                });
-            }
-            document.getElementById('teamMembersList').innerHTML = teamHtml;
-        }
-
-        function checkDailyWithdrawLimit() {
-            let todayStr = new Date().toDateString();
-            if(currentUser.lastWithdrawDate === todayStr) {
-                document.getElementById('submitWithdrawBtn').classList.add('hide');
-                document.getElementById('withdrawLimitMsg').classList.remove('hide');
-            } else {
-                document.getElementById('submitWithdrawBtn').classList.remove('hide');
-                document.getElementById('withdrawLimitMsg').classList.add('hide');
-            }
-        }
-
-        function setRechargeAmount(amt) {
-            document.getElementById('rechargeInputAmount').value = amt;
-        }
-
-        let currentDepositAmount = 0;
-        function proceedToPaymentGateway() {
-            let amt = parseFloat(document.getElementById('rechargeInputAmount').value);
-            if(!amt || amt < 100 || amt > 100000) { alert('Deposit limit is ₹100 to ₹1,00,000'); return; }
-            currentDepositAmount = amt;
-
-            let randomIndex = Math.floor(Math.random() * ROTATING_UPIS.length);
-            let assignedUpi = ROTATING_UPIS[randomIndex];
-            document.getElementById('assignedUpiText').innerText = assignedUpi;
-
-            let upiDeepLink = `upi://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-            document.getElementById('paytmAppBtn').href = `paytmmp://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-            document.getElementById('phonepeAppBtn').href = `phonepe://pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-            document.getElementById('gpayAppBtn').href = `tez://upi/pay?pa=${assignedUpi}&am=${amt}&cu=INR`;
-            document.getElementById('mobikwikAppBtn').href = upiDeepLink;
-
-            document.getElementById('paymentModal').classList.remove('hide');
-            startPaymentTimer(12 * 60);
-        }
-
-        function startPaymentTimer(duration) {
-            let timer = duration, minutes, seconds;
-            if(activeTimerInterval) clearInterval(activeTimerInterval);
-            activeTimerInterval = setInterval(() => {
-                minutes = parseInt(timer / 60, 10);
-                seconds = parseInt(timer % 60, 10);
-                minutes = minutes < 10 ? "0" + minutes : minutes;
-                seconds = seconds < 10 ? "0" + seconds : seconds;
-                document.getElementById('paymentTimer').innerText = minutes + ":" + seconds;
-                if (--timer < 0) {
-                    clearInterval(activeTimerInterval);
-                    alert('Payment session expired.');
-                    closePaymentModal();
-                }
-            }, 1000);
-        }
-
-        function closePaymentModal() {
-            if(activeTimerInterval) clearInterval(activeTimerInterval);
-            document.getElementById('paymentModal').classList.add('hide');
-        }
-
-        function submitPaymentProof() {
-            let utr = document.getElementById('paymentUtrInput').value.trim();
-            let screenshotFile = document.getElementById('paymentScreenshotInput').files[0];
-
-            let utrRegex = /^\d{12}$/;
-            if(!utr || !utrRegex.test(utr)) { 
-                alert('Please enter a valid 12-digit numeric UTR / Transaction ID!'); 
-                return; 
-            }
-            if(!screenshotFile) { 
-                alert('Please upload the payment screenshot before submitting!'); 
-                return; 
-            }
-
-            let reader = new FileReader();
-            reader.onload = function(e) {
-                let screenshotDataUrl = e.target.result;
-
-                let newDep = {
-                    id: Date.now(),
-                    phone: currentUser.phone,
-                    amount: currentDepositAmount,
-                    utr: utr,
-                    screenshot: screenshotFile.name,
-                    screenshotUrl: screenshotDataUrl,
-                    status: 'Pending',
-                    date: new Date().toLocaleString()
-                };
-
-                db.deposits.push(newDep);
-                saveDB();
-                
-                document.getElementById('rechargeInputAmount').value = '';
-                document.getElementById('paymentUtrInput').value = '';
-                document.getElementById('paymentScreenshotInput').value = '';
-                currentDepositAmount = 0;
-
-                closePaymentModal();
-                alert('Proof submitted successfully! Awaiting system verification.');
-                renderUserHistory();
-            };
-            reader.readAsDataURL(screenshotFile);
-        }
-
-        function checkBankStatusUI() {
-            if(currentUser.bank) {
-                document.getElementById('bankDetailsCard').classList.add('hide');
-                document.getElementById('withdrawFormCard').classList.remove('hide');
-                document.getElementById('savedBankName').innerText = currentUser.bank.name;
-                document.getElementById('savedBankAcc').innerText = currentUser.bank.acc;
-                document.getElementById('savedBankIfsc').innerText = currentUser.bank.ifsc;
-            } else {
-                document.getElementById('bankDetailsCard').classList.remove('hide');
-                document.getElementById('withdrawFormCard').classList.add('hide');
-            }
-        }
-
-        function saveBankDetails() {
-            let name = document.getElementById('bankHolderName').value.trim();
-            let acc = document.getElementById('bankAccNo').value.trim();
-            let ifsc = document.getElementById('bankIfsc').value.trim();
-
-            if(!name || !acc || !ifsc) { alert('Please fill all bank details (Name, Account Number, IFSC)'); return; }
-            currentUser.bank = { name, acc, ifsc };
-            
-            let uIndex = db.users.findIndex(u => u.phone === currentUser.phone);
-            if(uIndex !== -1) db.users[uIndex] = currentUser;
-            saveDB();
-            
-            alert('Bank details saved successfully!');
-            checkBankStatusUI();
-        }
-
-        function submitWithdrawRequest() {
-            let todayStr = new Date().toDateString();
-            if(currentUser.lastWithdrawDate === todayStr) {
-                alert('You have already used your 1 withdrawal limit for today!');
-                return;
-            }
-
-            let amt = parseFloat(document.getElementById('withdrawInputAmount').value);
-            
-            if(!amt || amt < 100) { 
-                alert('Minimum withdrawal amount is ₹100!'); 
-                return; 
-            }
-            if(currentUser.withdrawBal <= 0 || currentUser.withdrawBal < 100) { 
-                alert('Your withdrawable balance is 0 or less than minimum limit (₹100)! You cannot withdraw.'); 
-                return; 
-            }
-            if(amt > currentUser.withdrawBal) { 
-                alert('Insufficient withdrawable balance!'); 
-                return; 
-            }
-            if(amt > 30000) { 
-                alert('Maximum withdrawal limit is ₹30,000!'); 
-                return; 
-            }
-
-            let tax = amt * 0.12;
-            let netAmt = amt - tax;
-
-            let newWd = {
-                id: Date.now(),
-                phone: currentUser.phone,
-                amount: amt,
-                netAmount: netAmt,
-                tax: tax,
-                bankInfo: currentUser.bank,
-                status: 'Pending',
-                date: new Date().toLocaleString()
-            };
-
-            db.withdraws.push(newWd);
-            currentUser.balance -= amt;
-            currentUser.withdrawBal -= amt;
-            currentUser.lastWithdrawDate = todayStr;
-
-            let uIndex = db.users.findIndex(u => u.phone === currentUser.phone);
-            if(uIndex !== -1) db.users[uIndex] = currentUser;
-            saveDB();
-
-            alert('Withdrawal request submitted! 12% tax applied. Will be completed within 24 hours.');
-            showDashboardDataOnly();
-            checkDailyWithdrawLimit();
-            renderUserHistory();
-        }
-
-        function renderUserHistory() {
-            let depHtml = "";
-            let myDeps = db.deposits.filter(d => d.phone === currentUser.phone);
-            if(myDeps.length === 0) depHtml = '<p class="text-gray-400 text-center py-2">No recharge records.</p>';
-            else {
-                myDeps.forEach(d => {
-                    let color = d.status === 'Approved' ? 'text-emerald-600' : (d.status === 'Rejected' ? 'text-red-500' : 'text-amber-500');
-                    depHtml += `<div class="bg-gray-50 p-2.5 rounded flex justify-between items-center"><div><div class="font-bold">₹${d.amount}</div><div class="text-[10px] text-gray-400">UTR: ${d.utr} | Screenshot: ${d.screenshot || 'Uploaded'} | ${d.date}</div></div><span class="font-bold ${color}">${d.status}</span></div>`;
-                });
-            }
-            if(document.getElementById('userRechargeHistory')) document.getElementById('userRechargeHistory').innerHTML = depHtml;
-
-            let wdHtml = "";
-            let myWds = db.withdraws.filter(w => w.phone === currentUser.phone);
-            if(myWds.length === 0) wdHtml = '<p class="text-gray-400 text-center py-2">No withdrawal records.</p>';
-            else {
-                myWds.forEach(w => {
-                    let color = w.status === 'Completed' ? 'text-emerald-600' : (w.status === 'Rejected' ? 'text-red-500' : 'text-amber-500');
-                    wdHtml += `<div class="bg-gray-50 p-3 rounded-lg space-y-1">
-                        <div class="flex justify-between font-bold"><span>Amount: ₹${w.amount}</span><span class="${color}">${w.status}</span></div>
-                        <div class="text-[11px] text-gray-600 flex justify-between"><span>Tax (12%): ₹${w.tax.toFixed(2)}</span><span>Net Receivable: <strong class="text-emerald-600">₹${w.netAmount.toFixed(2)}</strong></span></div>
-                        <div class="text-[10px] text-gray-400">Date: ${w.date}</div>
-                    </div>`;
-                });
-            }
-            if(document.getElementById('userWithdrawHistory')) document.getElementById('userWithdrawHistory').innerHTML = wdHtml;
-        }
-
-        function renderProducts() {
-            let prodHtml = "";
-            let filteredProducts = db.products.filter(p => (p.category || "VIP 1") === currentInvestSubTab);
-
-            filteredProducts.forEach(p => {
-                let alreadyPurchased = db.investments.some(inv => inv.phone === currentUser.phone && inv.productId === p.id);
-                let btnText = alreadyPurchased ? "Purchased (1/1)" : "Invest Now";
-                let btnClass = alreadyPurchased ? "bg-gray-400 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700";
-
-                prodHtml += `<div class="bg-white rounded-xl p-3 shadow-sm flex items-center gap-3">
-                    <img src="${p.image}" class="w-16 h-16 object-cover rounded-lg">
-                    <div class="flex-1">
-                        <div class="font-bold text-xs text-gray-900">${p.name}</div>
-                        <div class="text-[10px] text-emerald-600 font-semibold">Price: ₹${p.price} | Return: ₹${p.daily} (24h)</div>
-                        <div class="text-[9px] text-gray-400">Category: ${p.category || "VIP 1"}</div>
-                    </div>
-                    <button onclick="investProduct(${p.id}, ${p.price}, ${p.daily})" class="${btnClass} text-white px-3 py-1.5 rounded-lg text-xs font-semibold">${btnText}</button>
-                </div>`;
-            });
-            document.getElementById('productListContainer').innerHTML = prodHtml || `<p class="text-gray-400 text-center py-4">No products available in ${currentInvestSubTab}.</p>`;
-        }
-
-        function investProduct(id, price, returnAmount) {
-            if(currentUser.rechargeBal <= 0 && currentUser.balance < price) {
-                alert('You cannot invest without making a deposit first! Please recharge first.');
-                switchTab('recharge');
-                return;
-            }
-            if(currentUser.balance < price) {
-                alert('Insufficient balance. Please recharge.');
-                switchTab('recharge');
-                return;
-            }
-
-            let already = db.investments.some(inv => inv.phone === currentUser.phone && inv.productId === id);
-            if(already) {
-                alert('You can purchase this product only 1 time!');
-                return;
-            }
-
-            currentUser.balance -= price;
-            let newInv = {
-                id: Date.now(),
-                phone: currentUser.phone,
-                productId: id,
-                price: price,
-                returnAmount: returnAmount,
-                maturityTime: Date.now() + (24 * 60 * 60 * 1000),
-                matured: false
-            };
-
-            db.investments.push(newInv);
-            
-            let uIndex = db.users.findIndex(u => u.phone === currentUser.phone);
-            if(uIndex !== -1) db.users[uIndex] = currentUser;
-            saveDB();
-
-            alert('Investment successful! Return will be automatically credited to your withdraw balance after 24 hours.');
-            showDashboardDataOnly();
-        }
-
-        function openAdminPanel() {
-            document.getElementById('adminPanelModal').classList.remove('hide');
-            renderAdminData();
-        }
-
-        function closeAdminPanel() {
-            document.getElementById('adminPanelModal').classList.add('hide');
-            if(currentUser && currentUser.phone !== ADMIN_PHONE) showDashboard();
-        }
-
-        function switchAdminTab(tab) {
-            ['users', 'deposits', 'withdraws', 'products'].forEach(t => {
-                let el = document.getElementById('adminSection' + t.charAt(0).toUpperCase() + t.slice(1));
-                if(el) el.classList.add('hide');
-                let tabEl = document.getElementById('admTab' + (t === 'users' ? 'Users' : t === 'deposits' ? 'Dep' : t === 'withdraws' ? 'Wd' : 'Prod'));
-                if(tabEl) tabEl.className = "py-2 rounded";
-            });
-            let targetEl = document.getElementById('adminSection' + tab.charAt(0).toUpperCase() + tab.slice(1));
-            if(targetEl) targetEl.classList.remove('hide');
-            let targetTabEl = document.getElementById('admTab' + (tab === 'users' ? 'Users' : tab === 'deposits' ? 'Dep' : tab === 'withdraws' ? 'Wd' : 'Prod'));
-            if(targetTabEl) targetTabEl.className = "py-2 bg-emerald-600 rounded";
-        }
-
-        function renderAdminData() {
-            let uHtml = "";
-            db.users.forEach((u, index) => {
-                let uid = 153120 + index;
-                let bankDetailsBox = u.bank ? `
-                    <div class="text-[10px] text-gray-300 space-y-0.5 mt-1 pt-1 border-t border-gray-700">
-                        <div>Name: <span class="text-yellow-400 font-bold">${u.bank.name}</span></div>
-                        <div>A/C No: <span class="text-emerald-400 font-bold">${u.bank.acc}</span></div>
-                        <div>IFSC: <span class="text-cyan-400 font-bold">${u.bank.ifsc}</span></div>
-                    </div>
-                ` : '<div class="text-red-400 text-[10px] mt-1 pt-1 border-t border-gray-700">Bank details not added</div>';
-
-                uHtml += `<div class="bg-gray-800 p-2.5 rounded space-y-1 text-xs">
-                    <div class="flex justify-between font-bold"><span>UID: ${uid}</span><span class="text-emerald-400">VIP ${u.vipLevel} | Bal: ₹${u.balance}</span></div>
-                    <div class="text-[10px] text-gray-300">Phone: ${u.phone} | ReferredBy: ${u.referredBy || 'None'}</div>
-                    ${bankDetailsBox}
-                </div>`;
-            });
-            let adminUsersListEl = document.getElementById('adminUsersList');
-            if(adminUsersListEl) adminUsersListEl.innerHTML = uHtml || '<p class="text-gray-400">No users.</p>';
-
-            let dHtml = "";
-            db.deposits.forEach(d => {
-                let matchedUser = db.users.find(u => u.phone === d.phone);
-                let userUid = matchedUser ? (153120 + db.users.indexOf(matchedUser)) : 'N/A';
-                let userName = matchedUser ? `User_${d.phone.slice(-4)}` : 'Unknown User';
-                let bankDetails = (matchedUser && matchedUser.bank) ? `Name: ${matchedUser.bank.name} | A/C: ${matchedUser.bank.acc} | IFSC: ${matchedUser.bank.ifsc}` : 'No bank details added';
-
-                let actionBtns = d.status === 'Pending' ? `<button onclick="approveDeposit(${d.id})" class="bg-emerald-600 px-2 py-1 rounded text-[10px] font-bold mr-1">Approve</button><button onclick="rejectDeposit(${d.id})" class="bg-red-600 px-2 py-1 rounded text-[10px] font-bold">Reject</button>` : `<span class="font-bold">${d.status}</span>`;
-                
-                let safeScreenshotUrl = d.screenshotUrl || '';
-                let screenshotPreview = safeScreenshotUrl ? `
-                    <div class="mt-2">
-                        <div class="text-[10px] text-gray-400 mb-1">Attached Screenshot (Click to Open):</div>
-                        <img src="${safeScreenshotUrl}" onclick="openImagePreview('${safeScreenshotUrl}')" class="w-24 h-24 object-cover rounded border border-gray-600 cursor-pointer hover:opacity-90 transition">
-                    </div>
-                ` : `<div class="text-yellow-400 text-[11px] mt-1">Screenshot File: ${d.screenshot || 'Not attached'}</div>`;
-
-                dHtml += `<div class="bg-gray-800 p-3 rounded-xl space-y-1.5 text-xs">
-                    <div class="flex justify-between font-bold text-emerald-400"><span>Name: ${userName} (UID: ${userUid})</span><span>₹${d.amount}</span></div>
-                    <div class="text-gray-300">Mobile: ${d.phone}</div>
-                    <div class="text-gray-300 text-[11px]">Bank Info: <span class="text-yellow-400 font-bold">${bankDetails}</span></div>
-                    <div class="text-gray-300">UTR / Transaction ID: <span class="text-emerald-400 font-mono font-bold">${d.utr}</span></div>
-                    ${screenshotPreview}
-                    <div class="text-[10px] text-gray-400 pt-1">Date: ${d.date}</div>
-                    <div class="pt-1 text-right">${actionBtns}</div>
-                </div>`;
-            });
-            let adminDepositsListEl = document.getElementById('adminDepositsList');
-            if(adminDepositsListEl) adminDepositsListEl.innerHTML = dHtml || '<p class="text-gray-400">No pending deposits.</p>';
-
-            let wHtml = "";
-            db.withdraws.forEach(w => {
-                let actionBtns = w.status === 'Pending' ? `<button onclick="approveWithdraw(${w.id})" class="bg-emerald-600 px-2 py-1 rounded text-[10px] font-bold mr-1">Approve</button><button onclick="rejectWithdraw(${w.id})" class="bg-red-600 px-2 py-1 rounded text-[10px] font-bold">Reject</button>` : `<span class="font-bold">${w.status}</span>`;
-                
-                let bankDetailsBox = w.bankInfo ? `
-                    <div class="bg-gray-900 p-2 rounded border border-gray-700 space-y-0.5 mt-1 font-mono text-[11px]">
-                        <div><span class="text-gray-400">Holder Name:</span> <span class="text-yellow-400 font-bold">${w.bankInfo.name}</span></div>
-                        <div><span class="text-gray-400">Account No:</span> <span class="text-emerald-400 font-bold">${w.bankInfo.acc}</span></div>
-                        <div><span class="text-gray-400">IFSC Code:</span> <span class="text-cyan-400 font-bold">${w.bankInfo.ifsc}</span></div>
-                    </div>
-                ` : '<div class="text-red-400 text-[11px]">Bank details missing</div>';
-
-                wHtml += `<div class="bg-gray-800 p-3 rounded-xl space-y-1.5 text-xs">
-                    <div class="flex justify-between font-bold text-sm text-emerald-400"><span>User: ${w.phone}</span><span>Withdraw: ₹${w.amount}</span></div>
-                    <div class="bg-gray-700/50 p-2 rounded flex justify-between font-semibold text-[11px]">
-                        <span>Tax (12%): <strong class="text-red-400">₹${w.tax.toFixed(2)}</strong></span>
-                        <span>Net Transfer: <strong class="text-emerald-400">₹${w.netAmount.toFixed(2)}</strong></span>
-                    </div>
-                    <div class="text-gray-300 font-semibold pt-1">Destination Bank Details:</div>
-                    ${bankDetailsBox}
-                    <div class="text-[10px] text-gray-400 pt-1">${w.date}</div>
-                    <div class="pt-1 text-right">${actionBtns}</div>
-                </div>`;
-            });
-            let adminWithdrawsListEl = document.getElementById('adminWithdrawsList');
-            if(adminWithdrawsListEl) adminWithdrawsListEl.innerHTML = wHtml || '<p class="text-gray-400">No pending withdrawals.</p>';
-
-            let pHtml = "";
-            db.products.forEach(p => {
-                pHtml += `<div class="bg-gray-800 p-2.5 rounded flex justify-between items-center text-xs">
+        return `
+            <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm space-y-2 border border-gray-700 shadow">
+                <div class="flex justify-between items-center">
                     <div>
-                        <div class="font-bold">${p.name} - ₹${p.price}</div>
-                        <div class="text-[10px] text-emerald-400">Category: ${p.category || "VIP 1"}</div>
+                        <p class="font-bold text-emerald-400 text-base">${p.name}</p>
+                        <p class="text-gray-300 text-xs mt-0.5">Price: ₹${p.price} | Return: ₹${p.returnAmount} | Timer: ${p.durationMinutes >= 60 ? (p.durationMinutes / 60) + ' Hours' : p.durationMinutes + 'm'}</p>
                     </div>
-                    <button onclick="adminDeleteProduct(${p.id})" class="text-red-400 font-bold">Delete</button>
-                </div>`;
-            });
-            let adminProductsListEl = document.getElementById('adminProductsList');
-            if(adminProductsListEl) adminProductsListEl.innerHTML = pHtml;
-        }
+                    <form action="/admin/delete-product" method="POST">
+                        <input type="hidden" name="index" value="${pIdx}">
+                        <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
+                    </form>
+                </div>
+                <div class="border-t border-gray-700 pt-2.5">
+                    <p class="text-xs text-yellow-400 font-semibold mb-1.5">Investors (${investorsList.length}):</p>
+                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                        ${investorsList.length ? investorsList.join('') : '<span class="text-xs text-gray-400">No investors yet.</span>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
 
-        function openImagePreview(url) {
-            let modalImg = document.getElementById('previewModalImg');
-            let previewModal = document.getElementById('imagePreviewModal');
-            if(modalImg && previewModal) {
-                modalImg.src = url;
-                previewModal.classList.remove('hide');
-            }
-        }
+    let userOptionsHtml = regularUsers.map(u => `<option value="${u.username}">UID: ${u.uid} (${u.username})</option>`).join('');
 
-        function closeImagePreview() {
-            let previewModal = document.getElementById('imagePreviewModal');
-            let modalImg = document.getElementById('previewModalImg');
-            if(previewModal) {
-                previewModal.classList.add('hide');
-            }
-            if(modalImg) {
-                modalImg.src = '';
-            }
-        }
-
-        function approveDeposit(id) {
-            let dep = db.deposits.find(d => d.id === id);
-            if(dep && dep.status === 'Pending') {
-                dep.status = 'Approved';
-                let u = db.users.find(user => user.phone === dep.phone);
-                if(u) {
-                    u.balance += dep.amount;
-                    u.rechargeBal = (u.rechargeBal || 0) + dep.amount;
+    let activeTabContent = '';
+    if (tab === 'users') {
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
+    } else if (tab === 'deposits') {
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-blue-400 mb-3 text-base">💰 Pending Deposit Requests</h3>${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending deposit requests.</p>'}</div>`;
+    } else if (tab === 'withdrawals') {
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-purple-400 mb-3 text-base">💸 Pending Withdrawal Requests</h3>${withdrawalsHtml.length ? withdrawalsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending withdrawal requests.</p>'}</div>`;
+    } else if (tab === 'products') {
+        activeTabContent = `
+            <div class="space-y-5">
+                <h3 class="font-bold text-yellow-400 text-base">📦 Add New Investment Product</h3>
+                <form action="/admin/add-product" method="POST" class="space-y-3 bg-gray-800/80 p-4 rounded-2xl border border-gray-700">
+                    <input type="text" name="name" placeholder="Product Name" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                    <input type="number" name="price" placeholder="Product Price (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                    <input type="number" name="returnAmount" placeholder="Return Income Amount (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     
-                    let newVip = calculateVipLevel(dep.amount);
-                    if(newVip > u.vipLevel) {
-                        u.vipLevel = newVip;
-                    }
+                    <div class="flex space-x-2">
+                        <input type="number" name="durationValue" placeholder="Duration (e.g. 120 or 2)" required class="w-2/3 bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                        <select name="durationType" class="w-1/3 bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                            <option value="minutes">Minutes</option>
+                            <option value="hours">Hours</option>
+                        </select>
+                    </div>
 
-                    if(u.referredBy) {
-                        let inviter = db.users.find(inv => inv.phone === u.referredBy);
-                        if(inviter) {
-                            let teamMembers = db.users.filter(usr => usr.referredBy === inviter.phone);
-                            let count = teamMembers.length;
-                            let rate = 0.04;
-                            let tierName = "Team A";
+                    <input type="text" name="imageUrl" placeholder="Image URL (optional)" class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                    <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-yellow-500/20">Add Product</button>
+                </form>
+                <h3 class="font-bold text-yellow-400 text-base mt-6">Active Products & Investor Details</h3>
+                <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml : '<p class="text-gray-400 text-sm text-center py-6">No products added.</p>'}</div>
+            </div>
+        `;
+    } else if (tab === 'send-funds') {
+        activeTabContent = `
+            <div class="space-y-6">
+                <div class="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-xl">
+                    <h3 class="font-bold text-emerald-400 mb-3 text-base">💸 Send Direct Funds to User</h3>
+                    <form action="/admin/send-funds" method="POST" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Select User</label>
+                            <select name="username" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-emerald-500">
+                                <option value="">-- Choose User --</option>
+                                ${userOptionsHtml}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Amount (₹)</label>
+                            <input type="number" name="amount" min="1" placeholder="Enter Amount" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-green-500/20 transition-all">Send Balance (Adds to Deposit History)</button>
+                    </form>
+                </div>
 
-                            if(count >= 150 && count < 1500) {
-                                rate = 0.01;
-                                tierName = "Team C";
-                            } else if(count >= 25 && count < 150) {
-                                rate = 0.02;
-                                tierName = "Team B";
-                            } else if(count >= 1500) {
-                                rate = 0.01;
-                                tierName = "Team C";
-                            }
+                <div class="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-xl">
+                    <h3 class="font-bold text-cyan-400 mb-3 text-base">📢 Send System Message / Notification</h3>
+                    <form action="/admin/send-message" method="POST" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Select User</label>
+                            <select name="username" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-cyan-500">
+                                <option value="">-- Choose User --</option>
+                                ${userOptionsHtml}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Message Body</label>
+                            <textarea name="message" rows="3" placeholder="Type notification message here..." required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-cyan-500"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-cyan-500/20 transition-all">Send System Notification</button>
+                    </form>
+                </div>
+            </div>
+        `;
+    }
 
-                            let commission = dep.amount * rate;
-                            inviter.balance += commission;
-                            inviter.withdrawBal += commission;
+    const content = `
+        <div class="space-y-6">
+            <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>🛡</span> Admin Dashboard</h2>
+            
+            <div class="flex space-x-2 border-b border-gray-800 pb-3 overflow-x-auto text-xs">
+                <a href="/admin?tab=users" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
+                <a href="/admin?tab=deposits" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits</a>
+                <a href="/admin?tab=withdrawals" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'withdrawals' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Withdrawals</a>
+                <a href="/admin?tab=products" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
+                <a href="/admin?tab=send-funds" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Funds & Msg</a>
+            </div>
 
-                            db.teamCommissions.push({
-                                earnerPhone: inviter.phone,
-                                memberPhone: u.phone,
-                                depositAmount: dep.amount,
-                                tier: tierName,
-                                rate: rate * 100,
-                                commissionEarned: commission,
-                                date: new Date().toLocaleString()
-                            });
-                        }
+            <div class="bg-gray-900/90 backdrop-blur-xl p-5 rounded-2xl border border-gray-800 shadow-2xl">
+                ${activeTabContent}
+            </div>
+        </div>
+    `;
+    res.send(renderLayout('Admin Panel', content, req.session.user, req));
+});
+
+app.post('/admin/add-product', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { name, price, returnAmount, durationValue, durationType, imageUrl } = req.body;
+    
+    let durationMinutes = parseInt(durationValue);
+    if (durationType === 'hours') {
+        durationMinutes = durationMinutes * 60;
+    }
+
+    let db = readDB();
+    db.products.push({
+        _id: 'prod_' + Date.now(),
+        name,
+        price: parseFloat(price),
+        returnAmount: parseFloat(returnAmount),
+        durationMinutes,
+        imageUrl: imageUrl || ''
+    });
+    writeDB(db);
+    res.redirect('/admin?tab=products');
+});
+
+app.post('/admin/delete-product', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { index } = req.body;
+    let db = readDB();
+    if (db.products && db.products[index]) {
+        db.products.splice(index, 1);
+        writeDB(db);
+    }
+    res.redirect('/admin?tab=products');
+});
+
+app.post('/admin/add-balance', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, amount } = req.body;
+    let db = readDB();
+    let user = db.users.find(u => u.username === username);
+    if (user) {
+        user.rechargeBalance = (user.rechargeBalance || 0) + parseFloat(amount);
+        writeDB(db);
+    }
+    res.redirect('/admin?tab=users');
+});
+
+app.post('/admin/action-deposit', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, index, action } = req.body;
+    let db = readDB();
+    let user = db.users.find(u => u.username === username);
+    if (user && user.deposits && user.deposits[index]) {
+        let deposit = user.deposits[index];
+        if (deposit.status === 'Pending') {
+            if (action === 'approve') {
+                deposit.status = 'Completed';
+                user.rechargeBalance = (user.rechargeBalance || 0) + deposit.amount;
+
+                if (user.referredBy) {
+                    let referrer = db.users.find(u => u.uid === user.referredBy);
+                    if (referrer) {
+                        let bonus = deposit.amount * 0.01;
+                        referrer.rechargeBalance = (referrer.rechargeBalance || 0) + bonus;
+                        if (!referrer.notifications) referrer.notifications = [];
+                        referrer.notifications.push({
+                            id: 'notif_' + Date.now(),
+                            user_id: referrer.uid,
+                            title: 'Referral Bonus Received',
+                            message: `You received a 1% referral deposit bonus of ₹${bonus.toFixed(2)} from UID: ${user.uid}`,
+                            is_read: false,
+                            created_at: new Date().toISOString()
+                        });
                     }
                 }
-                saveDB();
-                renderAdminData();
-                alert('Deposit approved successfully, VIP level updated, and referral commission credited!');
+            } else if (action === 'reject') {
+                deposit.status = 'Failed';
             }
+            writeDB(db);
         }
+    }
+    res.redirect('/admin?tab=deposits');
+});
 
-        function rejectDeposit(id) {
-            let dep = db.deposits.find(d => d.id === id);
-            if(dep) { dep.status = 'Rejected'; saveDB(); renderAdminData(); }
-        }
-
-        function approveWithdraw(id) {
-            let wd = db.withdraws.find(w => w.id === id);
-            if(wd && wd.status === 'Pending') {
-                wd.status = 'Completed';
-                saveDB();
-                renderAdminData();
-                alert('Withdrawal approved successfully!');
+app.post('/admin/action-withdrawal', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, index, action } = req.body;
+    let db = readDB();
+    let user = db.users.find(u => u.username === username);
+    if (user && user.withdrawals && user.withdrawals[index]) {
+        let withdrawal = user.withdrawals[index];
+        if (withdrawal.status === 'Pending') {
+            if (action === 'approve') {
+                withdrawal.status = 'Completed';
+            } else if (action === 'reject') {
+                withdrawal.status = 'Failed';
+                user.withdrawBalance = (user.withdrawBalance || 0) + withdrawal.amount;
             }
+            writeDB(db);
         }
+    }
+    res.redirect('/admin?tab=withdrawals');
+});
 
-        function rejectWithdraw(id) {
-            let wd = db.withdraws.find(w => w.id === id);
-            if(wd && wd.status === 'Pending') {
-                wd.status = 'Rejected';
-                let u = db.users.find(user => user.phone === wd.phone);
-                if(u) { 
-                    u.balance += wd.amount; 
-                    u.withdrawBal += wd.amount; 
-                    u.lastWithdrawDate = null;
-                }
-                saveDB();
-                renderAdminData();
-            }
-        }
+app.post('/admin/send-funds', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, amount } = req.body;
+    let db = readDB();
+    let user = db.users.find(u => u.username === username);
+    if (user) {
+        let amt = parseFloat(amount);
+        user.rechargeBalance = (user.rechargeBalance || 0) + amt;
+        if (!user.deposits) user.deposits = [];
+        user.deposits.push({
+            amount: amt,
+            utr: 'SYSTEM_CREDIT_' + Math.floor(Math.random() * 900000 + 100000),
+            gateway: 'System Name',
+            status: 'Completed',
+            date: new Date().toLocaleString()
+        });
+        writeDB(db);
+    }
+    res.redirect('/admin?tab=send-funds');
+});
 
-        function adminAddProduct() {
-            let name = document.getElementById('newProdName').value;
-            let price = parseFloat(document.getElementById('newProdPrice').value);
-            let daily = parseFloat(document.getElementById('newProdDaily').value);
-            let category = document.getElementById('newProdCategory').value;
-            let image = document.getElementById('newProdImage').value || "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=200";
+app.post('/admin/send-message', (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, message } = req.body;
+    let db = readDB();
+    let user = db.users.find(u => u.username === username);
+    if (user) {
+        if (!user.notifications) user.notifications = [];
+        user.notifications.push({
+            id: 'notif_' + Date.now(),
+            user_id: user.uid,
+            title: 'System Notification',
+            message: message,
+            is_read: false,
+            created_at: new Date().toISOString()
+        });
+        writeDB(db);
+    }
+    res.redirect('/admin?tab=send-funds');
+});
 
-            if(!name || !price || !daily) { alert('Please fill all product fields'); return; }
-            db.products.push({ id: Date.now(), name, price, daily, category, image, createdAt: Date.now() });
-            saveDB();
-            renderAdminData();
-            alert('Product published successfully in ' + category + '!');
-        }
-
-        function adminDeleteProduct(id) {
-            db.products = db.products.filter(p => p.id !== id);
-            saveDB();
-            renderAdminData();
-        }
-
-        function showForgotPasswordModal() {
-            document.getElementById('forgotPasswordModal').classList.remove('hide');
-        }
-
-        function sendForgotOTP() {
-            let u = db.users.find(user => user.phone === document.getElementById('forgotPhone').value);
-            if(!u) { alert('Mobile number not registered'); return; }
-            alert('Password reset OTP sent: 9876');
-            document.getElementById('forgotOtp').value = "9876";
-        }
-
-        function executePasswordReset() {
-            let phone = document.getElementById('forgotPhone').value;
-            let otp = document.getElementById('forgotOtp').value;
-            let newPass = document.getElementById('forgotNewPassword').value;
-
-            if(otp !== "9876") { alert('Invalid OTP'); return; }
-            let u = db.users.find(user => user.phone === phone);
-            if(u) {
-                u.password = newPass;
-                let uIndex = db.users.findIndex(user => user.phone === phone);
-                if(uIndex !== -1) db.users[uIndex] = u;
-                saveDB();
-                alert('Password updated successfully!');
-                document.getElementById('forgotPasswordModal').classList.add('hide');
-            }
-        }
-    </script>
-</body>
-</html>
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
