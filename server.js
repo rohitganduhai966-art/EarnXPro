@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const axios = require('axios'); // Telegram API ke liye axios add kiya gaya hai
+const axios = require('axios');
 
 const app = express();
 const PORT = 7700;
@@ -62,7 +62,7 @@ function readDB() {
             users: [
                 {
                     uid: 'UID10001',
-                    username: '7071088675',
+                    username: 'admin_user',
                     name: 'Admin',
                     password: 'Faraz78678678690786',
                     rechargeBalance: 0,
@@ -152,11 +152,11 @@ setInterval(() => {
 
 // Ensure default admin exists
 const dbInit = readDB();
-const adminExists = dbInit.users.find(u => u.username === '7071088675');
+const adminExists = dbInit.users.find(u => u.username === 'admin_user');
 if (!adminExists) {
     dbInit.users.push({
         uid: 'UID10001',
-        username: '7071088675',
+        username: 'admin_user',
         name: 'Admin',
         password: 'Faraz78678678690786',
         rechargeBalance: 0,
@@ -189,20 +189,21 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
 
 async function sendRealOTP(chatId, otp, callback) {
+    let target = chatId.startsWith('@') ? chatId : '@' + chatId;
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
 
     try {
         const response = await axios.post(url, {
-            chat_id: chatId,
+            chat_id: target,
             text: messageText,
             parse_mode: 'Markdown'
         });
-        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to Chat ID: ${chatId}`);
+        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to ${target}`);
         callback(true);
     } catch (error) {
         console.error('[TELEGRAM SEND ERROR]:', error.response?.data || error.message);
-        console.log(`[FALLBACK OTP LOG] Telegram Chat ID: ${chatId} | OTP: ${otp}`);
+        console.log(`[FALLBACK OTP LOG] Telegram Username: ${target} | OTP: ${otp}`);
         callback(false);
     }
 }
@@ -487,8 +488,8 @@ app.get('/login', (req, res) => {
             <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Welcome Back</h2>
             <form action="/login" method="POST" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Chat ID (Username)</label>
-                    <input type="text" name="username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Username (e.g. @yourusername)</label>
+                    <input type="text" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 mb-1">Password</label>
@@ -506,9 +507,12 @@ app.get('/login', (req, res) => {
 });
 
 app.post('/login', (req, res) => {
-    const { username, password } = req.body;
+    let { username, password } = req.body;
+    username = username.trim().toLowerCase();
+    if (!username.startsWith('@')) username = '@' + username;
+    
     let db = readDB();
-    const user = db.users.find(u => u.username === username && u.password === password);
+    const user = db.users.find(u => u.username.toLowerCase() === username && u.password === password);
     if (user) {
         req.session.user = user;
         req.session.modalShown = false;
@@ -517,7 +521,7 @@ app.post('/login', (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup with Telegram Chat ID Instructions Added
+// Signup with Telegram Username & Instructions Added in English
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -540,17 +544,24 @@ app.get('/signup', (req, res) => {
                 </div>
             </div>
             <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Create Secure Account</h2>
+            
+            <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-300 mb-4 leading-relaxed">
+                <p class="font-bold mb-1">📢 Important Telegram Bot Instructions:</p>
+                <p>1. First, send a message or start our bot on Telegram so it can send you OTP messages.</p>
+                <p class="mt-1">2. Enter your correct Telegram username below (e.g., @yourusername).</p>
+            </div>
+
             <form action="/send-signup-otp" method="POST" class="space-y-4">
                 <input type="hidden" name="ref" value="${refCode}">
                 <div>
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">Username</label>
-                    <input type="text" name="name" placeholder="Enter Username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Your Name</label>
+                    <input type="text" name="name" placeholder="Enter Full Name" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Chat ID</label>
-                    <input type="text" name="username" placeholder="Enter your Telegram Chat ID" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Username</label>
+                    <input type="text" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                     <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
-                        ⚠️ Please enter your Telegram Chat ID. The verification OTP will be sent directly to your Telegram via our Bot.
+                        ⚠️ Please enter your Telegram username. The verification OTP will be sent directly to your Telegram chat via our Bot.
                     </p>
                 </div>
                 <div>
@@ -567,10 +578,13 @@ app.get('/signup', (req, res) => {
 });
 
 app.post('/send-signup-otp', (req, res) => {
-    const { username, name, password, ref } = req.body;
+    let { username, name, password, ref } = req.body;
+    username = username.trim().toLowerCase();
+    if (!username.startsWith('@')) username = '@' + username;
+
     let db = readDB();
-    if (db.users.find(u => u.username === username)) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram Chat ID already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+    if (db.users.find(u => u.username.toLowerCase() === username)) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -581,7 +595,7 @@ app.post('/send-signup-otp', (req, res) => {
         const verifyHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10 text-center">
                 <h2 class="text-2xl font-black text-green-400 mb-3">Verify Telegram OTP</h2>
-                <p class="text-xs text-gray-400 mb-6">Secure 6-digit verification code sent to your Telegram Chat ID: <b>${username}</b></p>
+                <p class="text-xs text-gray-400 mb-6">Secure 6-digit verification code sent to your Telegram username: <b>${username}</b></p>
                 <form action="/verify-signup-otp" method="POST" class="space-y-4">
                     <input type="hidden" name="username" value="${username}">
                     <input type="text" name="otp" required maxlength="6" placeholder="Enter 6-digit OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-green-500">
@@ -594,7 +608,10 @@ app.post('/send-signup-otp', (req, res) => {
 });
 
 app.post('/verify-signup-otp', (req, res) => {
-    const { username, otp } = req.body;
+    let { username, otp } = req.body;
+    username = username.trim().toLowerCase();
+    if (!username.startsWith('@')) username = '@' + username;
+
     let db = readDB();
     const record = db.otps[username];
 
@@ -636,17 +653,20 @@ app.post('/verify-signup-otp', (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Forgot Password with Telegram Chat ID Instructions Added
+// Forgot Password with Telegram Username Instructions Added in English
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
             <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Reset Password</h2>
+            
+            <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300 mb-4 leading-relaxed">
+                <p class="font-bold mb-1">📢 Instructions:</p>
+                <p>Enter your registered Telegram username below to receive your password reset OTP.</p>
+            </div>
+
             <form action="/send-forgot-otp" method="POST" class="space-y-4">
                 <div>
-                    <input type="text" name="username" placeholder="Telegram Chat ID" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
-                    <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
-                        ⚠️ Please provide your Telegram Chat ID to receive the password reset OTP.
-                    </p>
+                    <input type="text" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
                 </div>
                 <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-yellow-500/20 transition-all">Send Reset OTP to Telegram</button>
             </form>
@@ -657,11 +677,14 @@ app.get('/forgot-password', (req, res) => {
 });
 
 app.post('/send-forgot-otp', (req, res) => {
-    const { username } = req.body;
+    let { username } = req.body;
+    username = username.trim().toLowerCase();
+    if (!username.startsWith('@')) username = '@' + username;
+
     let db = readDB();
-    const user = db.users.find(u => u.username === username);
+    const user = db.users.find(u => u.username.toLowerCase() === username);
     if (!user) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram Chat ID not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -685,12 +708,15 @@ app.post('/send-forgot-otp', (req, res) => {
 });
 
 app.post('/verify-and-reset', (req, res) => {
-    const { username, otp, newPassword } = req.body;
+    let { username, otp, newPassword } = req.body;
+    username = username.trim().toLowerCase();
+    if (!username.startsWith('@')) username = '@' + username;
+
     let db = readDB();
     const record = db.otps[username];
 
     if (record && record.type === 'forgot' && record.otp === otp) {
-        let user = db.users.find(u => u.username === username);
+        let user = db.users.find(u => u.username.toLowerCase() === username);
         if (user) {
             user.password = newPassword;
             delete db.otps[username];
@@ -739,7 +765,7 @@ app.get('/home', (req, res) => {
                 <div>
                     <h3 class="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">User Profile Verified</h3>
                     <div class="text-lg font-black text-white mt-1">UID: <span class="text-emerald-400">${currentUser.uid}</span></div>
-                    <p class="text-xs text-gray-300 mt-0.5">Username: ${currentUser.name || 'N/A'} | Telegram Chat ID: ${currentUser.username}</p>
+                    <p class="text-xs text-gray-300 mt-0.5">Name: ${currentUser.name || 'N/A'} | Telegram: ${currentUser.username}</p>
                 </div>
                 <div class="text-right flex-shrink-0">
                     <span class="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1.5 rounded-xl font-extrabold border border-emerald-500/30 whitespace-nowrap shadow">Active Account</span>
@@ -1092,7 +1118,7 @@ app.get('/account', (req, res) => {
                     <span>UID: <span class="text-emerald-400">${currentUser.uid}</span></span>
                     <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/30">Verified</span>
                 </div>
-                <div class="account-status text-xs text-gray-300 mt-2">Username: ${currentUser.name || 'N/A'} &bull; Telegram Chat ID: ${currentUser.username}</div>
+                <div class="account-status text-xs text-gray-300 mt-2">Name: ${currentUser.name || 'N/A'} &bull; Telegram: ${currentUser.username}</div>
             </div>
 
             <div class="balance-cards-grid">
@@ -1385,7 +1411,7 @@ app.get('/withdrawal', (req, res) => {
                 <input type="text" name="accName" placeholder="Account Holder Name" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                 <input type="text" name="accNo" placeholder="Enter Bank Account Number" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                 <input type="text" name="ifsc" placeholder="Enter IFSC Code" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                <input type="text" name="phone" placeholder="Telegram Chat ID" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                <input type="text" name="phone" placeholder="Telegram Username" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
             </div>
         `;
     }
@@ -1574,7 +1600,7 @@ app.get('/admin', (req, res) => {
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
             <div class="flex justify-between items-center mb-2">
                 <div>
-                    <p class="font-bold text-yellow-400">UID: ${u.uid} | Username: ${u.name || 'N/A'} | Telegram Chat ID: ${u.username}</p>
+                    <p class="font-bold text-yellow-400">UID: ${u.uid} | Name: ${u.name || 'N/A'} | Telegram: ${u.username}</p>
                     <p class="text-emerald-400 text-xs mt-0.5">Recharge Bal: ₹${(u.rechargeBalance || 0).toFixed(2)} | Withdraw Bal: ₹${(u.withdrawBalance || 0).toFixed(2)}</p>
                 </div>
                 <form action="/admin/add-balance" method="POST" class="flex space-x-1">
@@ -1912,10 +1938,9 @@ app.post('/admin/send-funds', (req, res) => {
 
 app.post('/admin/send-message', (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    let_username = req.body.username;
-    let message = req.body.message;
+    const { username, message } = req.body;
     let db = readDB();
-    let user = db.users.find(u => u.username === req.body.username);
+    let user = db.users.find(u => u.username === username);
     if (user) {
         if (!user.notifications) user.notifications = [];
         user.notifications.push({
