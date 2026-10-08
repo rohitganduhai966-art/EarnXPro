@@ -547,7 +547,7 @@ app.get('/signup', (req, res) => {
             
             <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-300 mb-4 leading-relaxed">
                 <p class="font-bold mb-1">📢 Important Telegram Bot Instructions:</p>
-                <p>1. First, send a message or start our bot on Telegram so it can send you OTP messages.</p>
+                <p>1. First, go to Telegram and start our bot: <b class="text-white">@EarnXPro_09bot</b> (send /start) so it can send you OTP messages.</p>
                 <p class="mt-1">2. Enter your correct Telegram username below (e.g., @yourusername).</p>
             </div>
 
