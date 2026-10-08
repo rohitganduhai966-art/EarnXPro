@@ -5,7 +5,6 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const qrcode = require('qrcode-terminal');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
@@ -187,13 +186,14 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection with Small QR Code Generation
+// WhatsApp Socket Connection with Pairing Code Setup
 let sock = null;
 
 async function connectToWhatsApp() {
     const authDir = path.join(__dirname, 'auth_info_baileys');
     
-    // Automatic cleanup of old session to avoid authorization conflicts
+    // Optional: Agar session fresh rakhna ho toh comment hata sakte hain
+    /*
     if (fs.existsSync(authDir)) {
         try {
             fs.rmSync(authDir, { recursive: true, force: true });
@@ -202,6 +202,7 @@ async function connectToWhatsApp() {
             console.error('[WHATSAPP] Failed to clear old session:', e);
         }
     }
+    */
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     
@@ -212,24 +213,28 @@ async function connectToWhatsApp() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
         },
-        browser: ["Ubuntu", "Chrome", "20.0.04"]
+        browser: ["Chrome", "Desktop", "120.0.0.0"]
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('[WHATSAPP] New QR Code generated successfully.');
+    if (!sock.authState.creds.registered) {
+        setTimeout(async () => {
             try {
-                // Render par chhota aur fit QR code print karne ke liye small: true
-                qrcode.generate(qr, { small: true });
+                const phoneNumber = "917071088675";
+                const code = await sock.requestPairingCode(phoneNumber);
+                console.log(`\n========================================`);
+                console.log(`[WHATSAPP PAIRING CODE]: ${code?.match(/.{1,4}/g)?.join('-')}`);
+                console.log(`========================================\n`);
             } catch (err) {
-                console.log('[QR DISPLAY ERROR]', err);
+                console.error('Error requesting pairing code:', err);
             }
-        }
+        }, 5000);
+    }
 
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
+        
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed, reconnecting:', shouldReconnect);
@@ -1999,3 +2004,4 @@ app.post('/admin/send-message', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
+
