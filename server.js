@@ -5,9 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const qrcode = require('qrcode-terminal');
+const axios = require('axios'); // Telegram API ke liye axios add kiya gaya hai
 
 const app = express();
 const PORT = 7700;
@@ -187,86 +185,25 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection with QR Code Support & Fresh Session
-let sock = null;
+// ==================== TELEGRAM BOT OTP INTEGRATION ====================
+const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
 
-async function connectToWhatsApp() {
-    const authDir = path.join(__dirname, 'whatsapp_session_v3');
-    
-    if (fs.existsSync(authDir)) {
-        try {
-            fs.rmSync(authDir, { recursive: true, force: true });
-            console.log('[WHATSAPP] Fresh session directory initialized.');
-        } catch (e) {
-            console.error('[WHATSAPP] Failed to clear session:', e);
-        }
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(authDir);
-    
-    sock = makeWASocket({
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: false,
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
-        },
-        browser: ["Chrome", "Desktop", "120.0.0.0"]
-    });
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('\n========================================');
-            console.log('[WHATSAPP QR CODE] Scan this QR code:');
-            // 'small: true' se QR code chota generate hoga jo mobile logs mein asani se dikhega
-            qrcode.generate(qr, { small: true });
-            console.log('========================================\n');
-        }
-
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed, reconnecting:', shouldReconnect);
-            if (shouldReconnect) {
-                setTimeout(() => connectToWhatsApp(), 5000);
-            }
-        } else if (connection === 'open') {
-            console.log('[WHATSAPP] Connected successfully to WhatsApp! 🚀');
-        }
-    });
-}
-
-// Start WhatsApp connection on server boot
-connectToWhatsApp();
-
-// Real WhatsApp OTP Function using Baileys
-async function sendRealOTP(phone, otp, callback) {
-    let formattedPhone = phone.replace(/\D/g, '');
-    if (formattedPhone.length === 10) {
-        formattedPhone = '91' + formattedPhone;
-    }
-    
-    const jid = `${formattedPhone}@s.whatsapp.net`;
+async function sendRealOTP(chatId, otp, callback) {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
 
     try {
-        if (!sock) {
-            console.log('[WHATSAPP ERROR] Socket not initialized yet.');
-            console.log(`[FALLBACK OTP LOG] Phone: +${formattedPhone} | OTP: ${otp}`);
-            callback(true);
-            return;
-        }
-
-        await sock.sendMessage(jid, { text: messageText });
-        console.log(`[WHATSAPP SENT] OTP ${otp} successfully sent to +${formattedPhone}`);
+        const response = await axios.post(url, {
+            chat_id: chatId,
+            text: messageText,
+            parse_mode: 'Markdown'
+        });
+        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to Chat ID: ${chatId}`);
         callback(true);
     } catch (error) {
-        console.error('[WHATSAPP SEND ERROR]:', error);
-        console.log(`[FALLBACK OTP LOG] Phone: +${formattedPhone} | OTP: ${otp}`);
-        callback(true);
+        console.error('[TELEGRAM SEND ERROR]:', error.response?.data || error.message);
+        console.log(`[FALLBACK OTP LOG] Telegram Chat ID: ${chatId} | OTP: ${otp}`);
+        callback(false);
     }
 }
 
@@ -550,7 +487,7 @@ app.get('/login', (req, res) => {
             <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Welcome Back</h2>
             <form action="/login" method="POST" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">Phone Number (Username)</label>
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Chat ID (Username)</label>
                     <input type="text" name="username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 <div>
@@ -580,7 +517,7 @@ app.post('/login', (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup with WhatsApp Instructions Added
+// Signup with Telegram Chat ID Instructions Added
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -610,10 +547,10 @@ app.get('/signup', (req, res) => {
                     <input type="text" name="name" placeholder="Enter Username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">WhatsApp-Registered Mobile Number</label>
-                    <input type="text" name="username" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Chat ID</label>
+                    <input type="text" name="username" placeholder="Enter your Telegram Chat ID" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                     <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
-                        ⚠️ Please provide your WhatsApp-registered mobile number. Real OTP will be sent directly to your WhatsApp via Baileys.
+                        ⚠️ Please enter your Telegram Chat ID. The verification OTP will be sent directly to your Telegram via our Bot.
                     </p>
                 </div>
                 <div>
@@ -621,7 +558,7 @@ app.get('/signup', (req, res) => {
                     <input type="password" name="password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 ${refCode ? `<p class="text-xs text-yellow-400 bg-yellow-500/10 p-2 rounded-lg border border-yellow-500/20">Referral Code Applied: ${refCode}</p>` : ''}
-                <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Send WhatsApp OTP & Register</button>
+                <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Send Telegram OTP & Register</button>
             </form>
             <p class="text-center text-xs text-gray-400 mt-4">Already have an account? <a href="/login" class="text-green-400 font-bold hover:underline">Login</a></p>
         </div>
@@ -633,7 +570,7 @@ app.post('/send-signup-otp', (req, res) => {
     const { username, name, password, ref } = req.body;
     let db = readDB();
     if (db.users.find(u => u.username === username)) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Phone number already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram Chat ID already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -643,8 +580,8 @@ app.post('/send-signup-otp', (req, res) => {
     sendRealOTP(username, otp, (success) => {
         const verifyHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10 text-center">
-                <h2 class="text-2xl font-black text-green-400 mb-3">Verify WhatsApp OTP</h2>
-                <p class="text-xs text-gray-400 mb-6">Secure 6-digit verification code sent to your WhatsApp number: <b>${username}</b></p>
+                <h2 class="text-2xl font-black text-green-400 mb-3">Verify Telegram OTP</h2>
+                <p class="text-xs text-gray-400 mb-6">Secure 6-digit verification code sent to your Telegram Chat ID: <b>${username}</b></p>
                 <form action="/verify-signup-otp" method="POST" class="space-y-4">
                     <input type="hidden" name="username" value="${username}">
                     <input type="text" name="otp" required maxlength="6" placeholder="Enter 6-digit OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-green-500">
@@ -699,19 +636,19 @@ app.post('/verify-signup-otp', (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Forgot Password with WhatsApp Instructions Added
+// Forgot Password with Telegram Chat ID Instructions Added
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
             <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Reset Password</h2>
             <form action="/send-forgot-otp" method="POST" class="space-y-4">
                 <div>
-                    <input type="text" name="username" placeholder="WhatsApp-Registered Mobile Number" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
+                    <input type="text" name="username" placeholder="Telegram Chat ID" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
                     <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
-                        ⚠️ Please provide your WhatsApp-registered mobile number to receive the password reset OTP.
+                        ⚠️ Please provide your Telegram Chat ID to receive the password reset OTP.
                     </p>
                 </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-yellow-500/20 transition-all">Send Reset OTP to WhatsApp</button>
+                <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-yellow-500/20 transition-all">Send Reset OTP to Telegram</button>
             </form>
             <a href="/login" class="block text-center text-xs text-gray-400 mt-4 hover:text-white underline">Back to Login</a>
         </div>
@@ -724,7 +661,7 @@ app.post('/send-forgot-otp', (req, res) => {
     let db = readDB();
     const user = db.users.find(u => u.username === username);
     if (!user) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Phone number not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram Chat ID not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -737,7 +674,7 @@ app.post('/send-forgot-otp', (req, res) => {
                 <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Set New Password</h2>
                 <form action="/verify-and-reset" method="POST" class="space-y-4">
                     <input type="hidden" name="username" value="${username}">
-                    <input type="text" name="otp" required maxlength="6" placeholder="Enter WhatsApp OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-yellow-500">
+                    <input type="text" name="otp" required maxlength="6" placeholder="Enter Telegram OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-yellow-500">
                     <input type="password" name="newPassword" placeholder="New Password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
                     <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Update Password</button>
                 </form>
@@ -802,7 +739,7 @@ app.get('/home', (req, res) => {
                 <div>
                     <h3 class="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">User Profile Verified</h3>
                     <div class="text-lg font-black text-white mt-1">UID: <span class="text-emerald-400">${currentUser.uid}</span></div>
-                    <p class="text-xs text-gray-300 mt-0.5">Username: ${currentUser.name || 'N/A'} | Phone: ${currentUser.username}</p>
+                    <p class="text-xs text-gray-300 mt-0.5">Username: ${currentUser.name || 'N/A'} | Telegram Chat ID: ${currentUser.username}</p>
                 </div>
                 <div class="text-right flex-shrink-0">
                     <span class="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1.5 rounded-xl font-extrabold border border-emerald-500/30 whitespace-nowrap shadow">Active Account</span>
@@ -1155,7 +1092,7 @@ app.get('/account', (req, res) => {
                     <span>UID: <span class="text-emerald-400">${currentUser.uid}</span></span>
                     <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/30">Verified</span>
                 </div>
-                <div class="account-status text-xs text-gray-300 mt-2">Username: ${currentUser.name || 'N/A'} &bull; Phone: ${currentUser.username}</div>
+                <div class="account-status text-xs text-gray-300 mt-2">Username: ${currentUser.name || 'N/A'} &bull; Telegram Chat ID: ${currentUser.username}</div>
             </div>
 
             <div class="balance-cards-grid">
@@ -1448,7 +1385,7 @@ app.get('/withdrawal', (req, res) => {
                 <input type="text" name="accName" placeholder="Account Holder Name" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                 <input type="text" name="accNo" placeholder="Enter Bank Account Number" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                 <input type="text" name="ifsc" placeholder="Enter IFSC Code" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                <input type="text" name="phone" placeholder="Registered Phone Number" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                <input type="text" name="phone" placeholder="Telegram Chat ID" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
             </div>
         `;
     }
@@ -1637,7 +1574,7 @@ app.get('/admin', (req, res) => {
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
             <div class="flex justify-between items-center mb-2">
                 <div>
-                    <p class="font-bold text-yellow-400">UID: ${u.uid} | Username: ${u.name || 'N/A'} | Phone: ${u.username}</p>
+                    <p class="font-bold text-yellow-400">UID: ${u.uid} | Username: ${u.name || 'N/A'} | Telegram Chat ID: ${u.username}</p>
                     <p class="text-emerald-400 text-xs mt-0.5">Recharge Bal: ₹${(u.rechargeBalance || 0).toFixed(2)} | Withdraw Bal: ₹${(u.withdrawBalance || 0).toFixed(2)}</p>
                 </div>
                 <form action="/admin/add-balance" method="POST" class="flex space-x-1">
@@ -1975,9 +1912,10 @@ app.post('/admin/send-funds', (req, res) => {
 
 app.post('/admin/send-message', (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { username, message } = req.body;
+    let_username = req.body.username;
+    let message = req.body.message;
     let db = readDB();
-    let user = db.users.find(u => u.username === username);
+    let user = db.users.find(u => u.username === req.body.username);
     if (user) {
         if (!user.notifications) user.notifications = [];
         user.notifications.push({
