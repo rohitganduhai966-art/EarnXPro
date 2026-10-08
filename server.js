@@ -80,13 +80,15 @@ function readDB() {
                 }
             ],
             products: [],
-            otps: {}
+            otps: {},
+            chatIds: {}
         };
         fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
     }
     const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (!data.products) data.products = [];
     if (!data.otps) data.otps = {};
+    if (!data.chatIds) data.chatIds = {};
     
     data.users.forEach(u => {
         if (u.rechargeBalance === undefined) u.rechargeBalance = u.balance || 0;
@@ -185,25 +187,57 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// ==================== TELEGRAM BOT OTP INTEGRATION ====================
+// ==================== DYNAMIC TELEGRAM BOT OTP INTEGRATION ====================
 const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
 
-async function sendRealOTP(chatId, otp, callback) {
-    let target = '6854841904'; // Permanently mapped numeric chat ID
+async function sendRealOTP(username, otp, callback) {
+    let db = readDB();
+    let targetChatId = db.chatIds[username];
+
+    if (!targetChatId) {
+        try {
+            const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
+            const res = await axios.get(updatesUrl);
+            const results = res.data.result || [];
+            
+            for (let update of results) {
+                const msg = update.message || update.edited_message;
+                if (msg && msg.from) {
+                    const fromUsername = '@' + (msg.from.username || '').toLowerCase();
+                    const chatId = msg.from.id;
+                    if (fromUsername) {
+                        db.chatIds[fromUsername] = chatId;
+                        if (fromUsername === username.toLowerCase()) {
+                            targetChatId = chatId;
+                        }
+                    }
+                }
+            }
+            writeDB(db);
+        } catch (err) {
+            console.error('[TELEGRAM GET UPDATES ERROR]:', err.message);
+        }
+    }
+
+    if (!targetChatId) {
+        console.log(`[TELEGRAM ERROR] Chat ID not found for ${username}. User must start bot @EarnXPro_09bot first.`);
+        callback(false);
+        return;
+    }
+
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
 
     try {
-        const response = await axios.post(url, {
-            chat_id: target,
+        await axios.post(url, {
+            chat_id: targetChatId,
             text: messageText,
             parse_mode: 'Markdown'
         });
-        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to ${target}`);
+        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to ${username} (Chat ID: ${targetChatId})`);
         callback(true);
     } catch (error) {
         console.error('[TELEGRAM SEND ERROR]:', error.response?.data || error.message);
-        console.log(`[FALLBACK OTP LOG] Telegram Username: ${target} | OTP: ${otp}`);
         callback(false);
     }
 }
@@ -521,7 +555,7 @@ app.post('/login', (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup with Telegram Username & Instructions Added in English
+// Signup with Telegram Username & Direct Clickable Bot Link
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -547,8 +581,8 @@ app.get('/signup', (req, res) => {
             
             <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-300 mb-4 leading-relaxed">
                 <p class="font-bold mb-1">📢 Important Telegram Bot Instructions:</p>
-                <p>1. First, go to Telegram and start our bot: <b class="text-white">@EarnXPro_09bot</b> (send /start) so it can send you OTP messages.</p>
-                <p class="mt-1">2. Enter your correct Telegram username below (e.g., @yourusername).</p>
+                <p>1. Pehle yahan click karke bot ko start karein: <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> (aur /start bhejyen).</p>
+                <p class="mt-1">2. Fir apna wahi Telegram username niche enter karein.</p>
             </div>
 
             <form action="/send-signup-otp" method="POST" class="space-y-4">
@@ -592,6 +626,9 @@ app.post('/send-signup-otp', (req, res) => {
     writeDB(db);
 
     sendRealOTP(username, otp, (success) => {
+        if (!success) {
+            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen aur fir try karein.</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        }
         const verifyHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10 text-center">
                 <h2 class="text-2xl font-black text-green-400 mb-3">Verify Telegram OTP</h2>
@@ -653,7 +690,7 @@ app.post('/verify-signup-otp', (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Forgot Password with Telegram Username Instructions Added in English
+// Forgot Password with Direct Clickable Bot Link
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
@@ -661,7 +698,7 @@ app.get('/forgot-password', (req, res) => {
             
             <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300 mb-4 leading-relaxed">
                 <p class="font-bold mb-1">📢 Instructions:</p>
-                <p>Enter your registered Telegram username below to receive your password reset OTP.</p>
+                <p>Pehle <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> par click karke /start bhejyen, fir apna registered username niche dalein.</p>
             </div>
 
             <form action="/send-forgot-otp" method="POST" class="space-y-4">
@@ -692,6 +729,9 @@ app.post('/send-forgot-otp', (req, res) => {
     writeDB(db);
 
     sendRealOTP(username, otp, (success) => {
+        if (!success) {
+            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen.</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        }
         const resetHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
                 <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Set New Password</h2>
