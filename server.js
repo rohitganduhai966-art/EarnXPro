@@ -186,11 +186,23 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection with QR and Pairing Code Support
+// WhatsApp Socket Connection with Auto Session Cleanup & Pairing Code Support
 let sock = null;
 
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const authDir = path.join(__dirname, 'auth_info_baileys');
+    
+    // Automatic cleanup of old session to avoid 401/428 errors
+    if (fs.existsSync(authDir)) {
+        try {
+            fs.rmSync(authDir, { recursive: true, force: true });
+            console.log('[WHATSAPP] Old session cache cleared automatically.');
+        } catch (e) {
+            console.error('[WHATSAPP] Failed to clear old session:', e);
+        }
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
