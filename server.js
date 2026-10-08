@@ -187,7 +187,7 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection with QR Code Generation
+// WhatsApp Socket Connection with Small QR Code Generation
 let sock = null;
 
 async function connectToWhatsApp() {
@@ -207,7 +207,7 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, // Disabled default wide print to prevent formatting issues
+        printQRInTerminal: false, 
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
@@ -223,7 +223,7 @@ async function connectToWhatsApp() {
         if (qr) {
             console.log('[WHATSAPP] New QR Code generated successfully.');
             try {
-                // Using small: true for clear scannability on cloud terminal logs
+                // Render par chhota aur fit QR code print karne ke liye small: true
                 qrcode.generate(qr, { small: true });
             } catch (err) {
                 console.log('[QR DISPLAY ERROR]', err);
