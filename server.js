@@ -207,7 +207,7 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: true, // Terminal par QR code print karne ke liye
+        printQRInTerminal: false, // Disabled default wide print to prevent formatting issues
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
@@ -223,6 +223,7 @@ async function connectToWhatsApp() {
         if (qr) {
             console.log('[WHATSAPP] New QR Code generated successfully.');
             try {
+                // Using small: true for clear scannability on cloud terminal logs
                 qrcode.generate(qr, { small: true });
             } catch (err) {
                 console.log('[QR DISPLAY ERROR]', err);
