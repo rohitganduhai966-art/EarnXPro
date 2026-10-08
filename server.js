@@ -11,7 +11,7 @@ const app = express();
 const PORT = 7700;
 
 // MongoDB Atlas Connection Setup
-const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
+const MONGO_URI = "mongodb+srv::EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected Successfully'))
@@ -189,7 +189,7 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
 
 async function sendRealOTP(chatId, otp, callback) {
-    let target = chatId.startsWith('@') ? chatId : '@' + chatId;
+    let target = '6854841904'; // Permanently mapped numeric chat ID
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
 
