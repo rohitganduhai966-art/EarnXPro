@@ -13,7 +13,6 @@ const PORT = 7700;
 // MongoDB Atlas Connection Setup
 const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
-
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected Successfully'))
     .catch(err => console.error('MongoDB Connection Error:', err));
@@ -63,7 +62,7 @@ function readDB() {
             users: [
                 {
                     uid: 'UID10001',
-                    username: 'admin_user',
+                    username: '@7071088675',
                     name: 'Admin',
                     password: 'Faraz78678678690786',
                     rechargeBalance: 0,
@@ -155,11 +154,11 @@ setInterval(() => {
 
 // Ensure default admin exists
 const dbInit = readDB();
-const adminExists = dbInit.users.find(u => u.username === 'admin_user');
+const adminExists = dbInit.users.find(u => u.username === '@7071088675' || u.is_admin);
 if (!adminExists) {
     dbInit.users.push({
         uid: 'UID10001',
-        username: 'admin_user',
+        username: '@7071088675',
         name: 'Admin',
         password: 'Faraz78678678690786',
         rechargeBalance: 0,
