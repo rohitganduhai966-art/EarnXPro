@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
+const qrcode = require('qrcode-terminal');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
@@ -186,13 +187,13 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection with Auto Session Cleanup & Pairing Code Support
+// WhatsApp Socket Connection with QR Code Generation
 let sock = null;
 
 async function connectToWhatsApp() {
     const authDir = path.join(__dirname, 'auth_info_baileys');
     
-    // Automatic cleanup of old session to avoid 401/428 errors
+    // Automatic cleanup of old session to avoid authorization conflicts
     if (fs.existsSync(authDir)) {
         try {
             fs.rmSync(authDir, { recursive: true, force: true });
@@ -206,11 +207,12 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
+        printQRInTerminal: true, // Terminal par QR code print karne ke liye
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
         },
-        browser: ["Chrome (Linux)", "", ""]
+        browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -219,7 +221,12 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
-            console.log('[WHATSAPP] QR Code generated successfully.');
+            console.log('[WHATSAPP] New QR Code generated successfully.');
+            try {
+                qrcode.generate(qr, { small: true });
+            } catch (err) {
+                console.log('[QR DISPLAY ERROR]', err);
+            }
         }
 
         if (connection === 'close') {
@@ -232,19 +239,6 @@ async function connectToWhatsApp() {
             console.log('[WHATSAPP] Connected successfully to WhatsApp!');
         }
     });
-
-    // Pairing code safe request after proper delay
-    const pairingNumber = "917071088675";
-    if (pairingNumber && !sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                let code = await sock.requestPairingCode(pairingNumber);
-                console.log(`[WHATSAPP PAIRING CODE] Your Pairing Code is: ${code}`);
-            } catch (err) {
-                console.error('[PAIRING CODE ERROR]', err);
-            }
-        }, 10000);
-    }
 }
 
 // Start WhatsApp connection on server boot
