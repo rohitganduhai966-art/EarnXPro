@@ -7,6 +7,7 @@ const multer = require('multer');
 const mongoose = require('mongoose');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const pino = require('pino');
+const qrcode = require('qrcode-terminal');
 
 const app = express();
 const PORT = 7700;
@@ -186,11 +187,11 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection with Fresh Session Path
+// WhatsApp Socket Connection with QR Code Support & Fresh Session
 let sock = null;
 
 async function connectToWhatsApp() {
-    const authDir = path.join(__dirname, 'auth_session_new');
+    const authDir = path.join(__dirname, 'whatsapp_session_v3');
     
     if (fs.existsSync(authDir)) {
         try {
@@ -205,7 +206,7 @@ async function connectToWhatsApp() {
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
-        printQRInTerminal: false, 
+        printQRInTerminal: false,
         auth: {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.creds, pino({ level: 'fatal' }).child({ level: 'fatal' }))
@@ -215,23 +216,17 @@ async function connectToWhatsApp() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    if (!sock.authState.creds.registered) {
-        setTimeout(async () => {
-            try {
-                const phoneNumber = "917071088675";
-                const code = await sock.requestPairingCode(phoneNumber);
-                console.log(`\n========================================`);
-                console.log(`[WHATSAPP PAIRING CODE]: ${code?.match(/.{1,4}/g)?.join('-')}`);
-                console.log(`========================================\n`);
-            } catch (err) {
-                console.error('Error requesting pairing code:', err);
-            }
-        }, 5000);
-    }
-
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
+        const { connection, lastDisconnect, qr } = update;
         
+        if (qr) {
+            console.log('\n========================================');
+            console.log('[WHATSAPP QR CODE] Scan this QR code:');
+            // 'small: true' se QR code chota generate hoga jo mobile logs mein asani se dikhega
+            qrcode.generate(qr, { small: true });
+            console.log('========================================\n');
+        }
+
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed, reconnecting:', shouldReconnect);
@@ -239,7 +234,7 @@ async function connectToWhatsApp() {
                 setTimeout(() => connectToWhatsApp(), 5000);
             }
         } else if (connection === 'open') {
-            console.log('[WHATSAPP] Connected successfully to WhatsApp!');
+            console.log('[WHATSAPP] Connected successfully to WhatsApp! 🚀');
         }
     });
 }
