@@ -186,23 +186,20 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// WhatsApp Socket Connection with Pairing Code Setup
+// WhatsApp Socket Connection with Fresh Session Path
 let sock = null;
 
 async function connectToWhatsApp() {
-    const authDir = path.join(__dirname, 'auth_info_baileys');
+    const authDir = path.join(__dirname, 'auth_session_new');
     
-    // Optional: Agar session fresh rakhna ho toh comment hata sakte hain
-    /*
     if (fs.existsSync(authDir)) {
         try {
             fs.rmSync(authDir, { recursive: true, force: true });
-            console.log('[WHATSAPP] Old session cache cleared automatically.');
+            console.log('[WHATSAPP] Fresh session directory initialized.');
         } catch (e) {
-            console.error('[WHATSAPP] Failed to clear old session:', e);
+            console.error('[WHATSAPP] Failed to clear session:', e);
         }
     }
-    */
 
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
     
@@ -2004,4 +2001,3 @@ app.post('/admin/send-message', (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
-
