@@ -129,6 +129,90 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 }
 });
 
+// ==================== DYNAMIC TELEGRAM BOT & CHAT ID AUTO-SYNC ====================
+const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
+
+// Background Polling to automatically capture Chat ID when user starts the bot (@EarnXPro_09bot)
+setInterval(async () => {
+    try {
+        const res = await axios.get(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`);
+        const results = res.data.result || [];
+        let db = readDB();
+        let updated = false;
+
+        results.forEach(update => {
+            const msg = update.message || update.edited_message;
+            if (msg && msg.from) {
+                const username = '@' + (msg.from.username || '').toLowerCase();
+                const chatId = msg.from.id;
+                if (username && db.chatIds[username] !== chatId) {
+                    db.chatIds[username] = chatId;
+                    updated = true;
+                    console.log(`[AUTO CHAT ID SAVED] ${username} -> ${chatId}`);
+                }
+            }
+        });
+
+        if (updated) {
+            writeDB(db);
+        }
+    } catch (err) {
+        console.error('[TELEGRAM POLLING ERROR]:', err.message);
+    }
+}, 3000);
+
+async function sendRealOTP(username, otp, callback) {
+    let db = readDB();
+    let targetChatId = db.chatIds[username];
+
+    if (!targetChatId) {
+        try {
+            const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
+            const res = await axios.get(updatesUrl);
+            const results = res.data.result || [];
+            
+            for (let update of results) {
+                const msg = update.message || update.edited_message;
+                if (msg && msg.from) {
+                    const fromUsername = '@' + (msg.from.username || '').toLowerCase();
+                    const chatId = msg.from.id;
+                    if (fromUsername) {
+                        db.chatIds[fromUsername] = chatId;
+                        if (fromUsername === username.toLowerCase()) {
+                            targetChatId = chatId;
+                        }
+                    }
+                }
+            }
+            writeDB(db);
+        } catch (err) {
+            console.error('[TELEGRAM GET UPDATES ERROR]:', err.message);
+        }
+    }
+
+    if (!targetChatId) {
+        console.log(`[TELEGRAM ERROR] Chat ID not found for ${username}. User must start bot @EarnXPro_09bot first.`);
+        callback(false);
+        return;
+    }
+
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
+
+    try {
+        await axios.post(url, {
+            chat_id: targetChatId,
+            text: messageText,
+            parse_mode: 'Markdown'
+        });
+        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to ${username} (Chat ID: ${targetChatId})`);
+        callback(true);
+    } catch (error) {
+        console.error('[TELEGRAM SEND ERROR]:', error.response?.data || error.message);
+        callback(false);
+    }
+}
+
 // Background Task: Check Investments Timers every 10 seconds
 setInterval(() => {
     let db = readDB();
@@ -186,61 +270,6 @@ app.use(session({
 }));
 
 app.use('/uploads', express.static(UPLOAD_DIR));
-
-// ==================== DYNAMIC TELEGRAM BOT OTP INTEGRATION ====================
-const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
-
-async function sendRealOTP(username, otp, callback) {
-    let db = readDB();
-    let targetChatId = db.chatIds[username];
-
-    if (!targetChatId) {
-        try {
-            const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
-            const res = await axios.get(updatesUrl);
-            const results = res.data.result || [];
-            
-            for (let update of results) {
-                const msg = update.message || update.edited_message;
-                if (msg && msg.from) {
-                    const fromUsername = '@' + (msg.from.username || '').toLowerCase();
-                    const chatId = msg.from.id;
-                    if (fromUsername) {
-                        db.chatIds[fromUsername] = chatId;
-                        if (fromUsername === username.toLowerCase()) {
-                            targetChatId = chatId;
-                        }
-                    }
-                }
-            }
-            writeDB(db);
-        } catch (err) {
-            console.error('[TELEGRAM GET UPDATES ERROR]:', err.message);
-        }
-    }
-
-    if (!targetChatId) {
-        console.log(`[TELEGRAM ERROR] Chat ID not found for ${username}. User must start bot @EarnXPro_09bot first.`);
-        callback(false);
-        return;
-    }
-
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
-
-    try {
-        await axios.post(url, {
-            chat_id: targetChatId,
-            text: messageText,
-            parse_mode: 'Markdown'
-        });
-        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to ${username} (Chat ID: ${targetChatId})`);
-        callback(true);
-    } catch (error) {
-        console.error('[TELEGRAM SEND ERROR]:', error.response?.data || error.message);
-        callback(false);
-    }
-}
 
 // Layout Template with Ultra-Professional 3D Glassmorphism Logo & Background Gradients
 function renderLayout(title, content, user, req) {
@@ -555,7 +584,7 @@ app.post('/login', (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup with Telegram Username & Direct Clickable Bot Link
+// Signup with Telegram Username & Direct Clickable Bot Link (telegram.me used)
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -581,7 +610,7 @@ app.get('/signup', (req, res) => {
             
             <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-300 mb-4 leading-relaxed">
                 <p class="font-bold mb-1">📢 Important Telegram Bot Instructions:</p>
-                <p>1. Pehle yahan click karke bot ko start karein: <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> (aur /start bhejyen).</p>
+                <p>1. Pehle yahan click karke bot ko start karein: <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> (aur /start bhejyen).</p>
                 <p class="mt-1">2. Fir apna wahi Telegram username niche enter karein.</p>
             </div>
 
@@ -627,7 +656,7 @@ app.post('/send-signup-otp', (req, res) => {
 
     sendRealOTP(username, otp, (success) => {
         if (!success) {
-            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen aur fir try karein.</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen aur fir try karein.</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
         }
         const verifyHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10 text-center">
@@ -690,7 +719,7 @@ app.post('/verify-signup-otp', (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Forgot Password with Direct Clickable Bot Link
+// Forgot Password with Direct Clickable Bot Link (telegram.me used)
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
@@ -698,7 +727,7 @@ app.get('/forgot-password', (req, res) => {
             
             <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300 mb-4 leading-relaxed">
                 <p class="font-bold mb-1">📢 Instructions:</p>
-                <p>Pehle <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> par click karke /start bhejyen, fir apna registered username niche dalein.</p>
+                <p>Pehle <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> par click karke /start bhejyen, fir apna registered username niche dalein.</p>
             </div>
 
             <form action="/send-forgot-otp" method="POST" class="space-y-4">
@@ -730,7 +759,7 @@ app.post('/send-forgot-otp', (req, res) => {
 
     sendRealOTP(username, otp, (success) => {
         if (!success) {
-            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://t.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen.</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen.</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
         }
         const resetHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
