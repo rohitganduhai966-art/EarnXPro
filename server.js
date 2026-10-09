@@ -130,7 +130,7 @@ const upload = multer({
 });
 
 // ==================== DYNAMIC TELEGRAM BOT & ON-DEMAND CHAT ID SYNC ====================
-const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
+const TELEGRAM_BOT_TOKEN = '8808651451:AAGvbN8t1_CstrgvukjMqABd5D6i5138Z54';
 
 async function sendRealOTP(username, otp, callback) {
     let db = readDB();
