@@ -129,37 +129,8 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// ==================== DYNAMIC TELEGRAM BOT & CHAT ID AUTO-SYNC ====================
+// ==================== DYNAMIC TELEGRAM BOT & ON-DEMAND CHAT ID SYNC ====================
 const TELEGRAM_BOT_TOKEN = '8808651451:AAEf35tvvKCKMcFxB8gMuMx3aAXFiPKd2yo';
-
-// Background Polling to automatically capture Chat ID when user starts the bot (@EarnXPro_09bot)
-setInterval(async () => {
-    try {
-        const res = await axios.get(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`);
-        const results = res.data.result || [];
-        let db = readDB();
-        let updated = false;
-
-        results.forEach(update => {
-            const msg = update.message || update.edited_message;
-            if (msg && msg.from) {
-                const username = '@' + (msg.from.username || '').toLowerCase();
-                const chatId = msg.from.id;
-                if (username && db.chatIds[username] !== chatId) {
-                    db.chatIds[username] = chatId;
-                    updated = true;
-                    console.log(`[AUTO CHAT ID SAVED] ${username} -> ${chatId}`);
-                }
-            }
-        });
-
-        if (updated) {
-            writeDB(db);
-        }
-    } catch (err) {
-        console.error('[TELEGRAM POLLING ERROR]:', err.message);
-    }
-}, 3000);
 
 async function sendRealOTP(username, otp, callback) {
     let db = readDB();
