@@ -113,7 +113,7 @@ function getRandomUpiId() {
     return ROTATING_UPI_IDS[randomIndex];
 }
 
-// Ensure uploads directory exists for screenshots
+// Ensure uploads directory exists for screenshots and assets
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -308,8 +308,9 @@ app.use(session({
 }));
 
 app.use('/uploads', express.static(UPLOAD_DIR));
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Layout Template with Updated Logo Image Integration
+// Layout Template with Permanent Local Asset Logo Route
 function renderLayout(title, content, user, req) {
     let bottomNav = '';
     let topHeaderRight = '';
@@ -523,7 +524,7 @@ function renderLayout(title, content, user, req) {
         <header class="bg-gray-900/90 backdrop-blur-xl border-b border-gray-800 p-3 flex justify-between items-center sticky top-0 z-40 shadow-2xl">
             <a href="/" class="flex items-center gap-2.5 group">
                 <div class="relative w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 group-hover:scale-105 transition-transform border border-emerald-500/30">
-                    <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                    <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                 </div>
                 <div class="flex flex-col">
                     <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">EarnX <span class="text-cyan-400 font-extrabold">Pro</span></span>
@@ -571,7 +572,7 @@ app.get('/login', (req, res) => {
             <div class="flex items-center justify-center mb-6">
                 <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
                     <div class="relative w-11 h-11 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
-                        <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                        <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                     </div>
                     <div class="flex flex-col text-left">
                         <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
@@ -626,7 +627,7 @@ app.get('/signup', (req, res) => {
             <div class="flex items-center justify-center mb-6">
                 <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
                     <div class="relative w-11 h-11 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
-                        <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                        <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                     </div>
                     <div class="flex flex-col text-left">
                         <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
@@ -1188,7 +1189,7 @@ app.get('/account', async (req, res) => {
         <div class="flex items-center justify-center py-2">
             <div class="inline-flex items-center gap-3 bg-gradient-to-br from-gray-900/95 to-slate-900/95 backdrop-blur-2xl border border-emerald-500/20 px-5 py-2.5 rounded-2xl shadow-2xl">
                 <div class="relative w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
-                    <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                    <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                 </div>
                 <div class="flex flex-col text-left">
                     <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
