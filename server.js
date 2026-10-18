@@ -17,7 +17,85 @@ mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected Successfully'))
     .catch(err => console.error('MongoDB Connection Error:', err));
 
-const DB_FILE = path.join(__dirname, 'database.json');
+// Mongoose Schema Definitions for Permanent Cloud Storage
+const userSchema = new mongoose.Schema({
+    uid: { type: String, unique: true },
+    username: { type: String, required: true, lowercase: true, trim: true },
+    name: { type: String, default: '' },
+    password: { type: String, required: true },
+    rechargeBalance: { type: Number, default: 0 },
+    withdrawBalance: { type: Number, default: 0 },
+    is_admin: { type: Boolean, default: false },
+    bankDetails: {
+        name: { type: String, default: '' },
+        accNo: { type: String, default: '' },
+        ifsc: { type: String, default: '' },
+        phone: { type: String, default: '' }
+    },
+    deposits: [{
+        amount: Number,
+        utr: String,
+        gateway: String,
+        screenshotUrl: String,
+        status: { type: String, default: 'Pending' },
+        date: String
+    }],
+    withdrawals: [{
+        amount: Number,
+        bankDetails: Object,
+        status: { type: String, default: 'Pending' },
+        date: String
+    }],
+    investments: [{
+        productName: String,
+        productId: String,
+        amount: Number,
+        returnAmount: Number,
+        endTime: Number,
+        status: { type: String, default: 'Active' },
+        date: String
+    }],
+    notifications: [{
+        id: String,
+        user_id: String,
+        title: { type: String, default: 'System Notification' },
+        message: String,
+        is_read: { type: Boolean, default: false },
+        created_at: { type: String, default: () => new Date().toISOString() }
+    }],
+    referredBy: { type: String, default: null },
+    referralCount: { type: Number, default: 0 },
+    teamLevel: { type: String, default: 'A' },
+    lastCheckInDate: { type: String, default: null }
+});
+
+const productSchema = new mongoose.Schema({
+    _id: String,
+    name: String,
+    price: Number,
+    returnAmount: Number,
+    durationMinutes: Number,
+    imageUrl: String
+});
+
+const otpSchema = new mongoose.Schema({
+    username: { type: String, unique: true, lowercase: true, trim: true },
+    otp: String,
+    name: String,
+    password: String,
+    ref: String,
+    type: String
+});
+
+const chatIdSchema = new mongoose.Schema({
+    username: { type: String, unique: true, lowercase: true, trim: true },
+    chatId: Number
+});
+
+const User = mongoose.model('User', userSchema);
+const Product = mongoose.model('Product', productSchema);
+const Otp = mongoose.model('Otp', otpSchema);
+const ChatId = mongoose.model('ChatId', chatIdSchema);
 
 // List of Rotating UPI IDs for Deposits
 const ROTATING_UPI_IDS = [
@@ -55,65 +133,36 @@ function validateUTR(utr) {
     return utrRegex.test(utr);
 }
 
-// Initialize Database with notifications and extended structures
-function readDB() {
-    if (!fs.existsSync(DB_FILE)) {
-        const initialData = {
-            users: [
-                {
-                    uid: 'UID10001',
-                    username: '@7071088675',
-                    name: 'Admin',
-                    password: 'Faraz78678678690786',
-                    rechargeBalance: 0,
-                    withdrawBalance: 0,
-                    is_admin: true,
-                    bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
-                    deposits: [],
-                    withdrawals: [],
-                    investments: [],
-                    notifications: [],
-                    referredBy: null,
-                    referralCount: 0,
-                    teamLevel: 'A',
-                    lastCheckInDate: null
-                }
-            ],
-            products: [],
-            otps: {},
-            chatIds: {}
-        };
-        fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
-    }
-    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    if (!data.products) data.products = [];
-    if (!data.otps) data.otps = {};
-    if (!data.chatIds) data.chatIds = {};
-    
-    data.users.forEach(u => {
-        if (u.rechargeBalance === undefined) u.rechargeBalance = u.balance || 0;
-        if (u.withdrawBalance === undefined) u.withdrawBalance = 0;
-        if (u.lastCheckInDate === undefined) u.lastCheckInDate = null;
-        if (!u.notifications) u.notifications = [];
-        else {
-            u.notifications = u.notifications.map((n, idx) => ({
-                id: n.id || ('notif_' + (idx + 1)),
-                user_id: n.user_id || u.uid,
-                title: n.title || 'System Notification',
-                message: n.message || n,
-                is_read: n.is_read !== undefined ? n.is_read : false,
-                created_at: n.created_at || new Date().toISOString()
-            }));
+// Ensure default admin exists in MongoDB on startup
+async function ensureDefaultAdmin() {
+    try {
+        const admin = await User.findOne({ is_admin: true });
+        if (!admin) {
+            await User.create({
+                uid: 'UID10001',
+                username: '@7071088675',
+                name: 'Admin',
+                password: 'Faraz78678678690786',
+                rechargeBalance: 0,
+                withdrawBalance: 0,
+                is_admin: true,
+                bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
+                deposits: [],
+                withdrawals: [],
+                investments: [],
+                notifications: [],
+                referredBy: null,
+                referralCount: 0,
+                teamLevel: 'A',
+                lastCheckInDate: null
+            });
+            console.log('[MONGODB] Default Admin created successfully.');
         }
-        if (!u.name) u.name = '';
-    });
-
-    return data;
+    } catch (err) {
+        console.error('[MONGODB ADMIN ERROR]:', err.message);
+    }
 }
-
-function writeDB(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
+setTimeout(ensureDefaultAdmin, 2000);
 
 // Multer Storage Configuration for Deposits Screenshot
 const storage = multer.diskStorage({
@@ -137,7 +186,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 // TELEGRAM WEBHOOK ENDPOINT: Automatically captures Chat IDs when users press /start
-app.post('/telegram-webhook', (req, res) => {
+app.post('/telegram-webhook', async (req, res) => {
     try {
         const update = req.body;
         const msg = update.message || update.edited_message;
@@ -146,9 +195,11 @@ app.post('/telegram-webhook', (req, res) => {
             const chatId = msg.from.id;
             if (rawUsername) {
                 const formattedUsername = '@' + rawUsername.toLowerCase();
-                let db = readDB();
-                db.chatIds[formattedUsername] = chatId;
-                writeDB(db);
+                await ChatId.findOneAndUpdate(
+                    { username: formattedUsername },
+                    { chatId },
+                    { upsert: true, new: true }
+                );
                 console.log(`[WEBHOOK SUCCESS] Captured Chat ID ${chatId} for ${formattedUsername}`);
 
                 // Send auto-acknowledgement back to Telegram user
@@ -180,45 +231,48 @@ async function setupTelegramWebhook() {
 }
 
 async function sendRealOTP(username, otp, callback) {
-    let db = readDB();
-    let targetChatId = db.chatIds[username.toLowerCase()];
+    try {
+        let chatIdRecord = await ChatId.findOne({ username: username.toLowerCase() });
+        let targetChatId = chatIdRecord ? chatIdRecord.chatId : null;
 
-    // Fallback: If webhook missed it, attempt quick check via getWebhookUpdates/getUpdates
-    if (!targetChatId) {
-        try {
-            const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
-            const res = await axios.get(updatesUrl);
-            const results = res.data.result || [];
-            
-            for (let update of results) {
-                const msg = update.message || update.edited_message;
-                if (msg && msg.from) {
-                    const fromUsername = '@' + (msg.from.username || '').toLowerCase();
-                    const chatId = msg.from.id;
-                    if (fromUsername) {
-                        db.chatIds[fromUsername] = chatId;
-                        if (fromUsername === username.toLowerCase()) {
-                            targetChatId = chatId;
+        // Fallback: If webhook missed it, attempt quick check via getUpdates
+        if (!targetChatId) {
+            try {
+                const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
+                const res = await axios.get(updatesUrl);
+                const results = res.data.result || [];
+                
+                for (let update of results) {
+                    const msg = update.message || update.edited_message;
+                    if (msg && msg.from) {
+                        const fromUsername = '@' + (msg.from.username || '').toLowerCase();
+                        const chatId = msg.from.id;
+                        if (fromUsername) {
+                            await ChatId.findOneAndUpdate(
+                                { username: fromUsername },
+                                { chatId },
+                                { upsert: true, new: true }
+                            );
+                            if (fromUsername === username.toLowerCase()) {
+                                targetChatId = chatId;
+                            }
                         }
                     }
                 }
+            } catch (err) {
+                console.error('[TELEGRAM GET UPDATES ERROR]:', err.message);
             }
-            writeDB(db);
-        } catch (err) {
-            console.error('[TELEGRAM GET UPDATES ERROR]:', err.message);
         }
-    }
 
-    if (!targetChatId) {
-        console.log(`[TELEGRAM ERROR] Chat ID not found for ${username}. User must start bot @EarnXPro_09bot first.`);
-        callback(false);
-        return;
-    }
+        if (!targetChatId) {
+            console.log(`[TELEGRAM ERROR] Chat ID not found for ${username}. User must start bot @EarnXPro_09bot first.`);
+            callback(false);
+            return;
+        }
 
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
+        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
 
-    try {
         await axios.post(url, {
             chat_id: targetChatId,
             text: messageText,
@@ -233,52 +287,29 @@ async function sendRealOTP(username, otp, callback) {
 }
 
 // Background Task: Check Investments Timers every 10 seconds
-setInterval(() => {
-    let db = readDB();
-    let updated = false;
-    const now = Date.now();
-
-    db.users.forEach(user => {
-        if (!user.investments) user.investments = [];
-        user.investments.forEach(inv => {
-            if (inv.status === 'Active' && now >= inv.endTime) {
-                inv.status = 'Completed';
-                const totalReturn = inv.returnAmount || inv.amount;
-                user.withdrawBalance += totalReturn;
-                updated = true;
+setInterval(async () => {
+    try {
+        const now = Date.now();
+        const users = await User.find({ "investments.status": "Active" });
+        
+        for (let user of users) {
+            let updated = false;
+            user.investments.forEach(inv => {
+                if (inv.status === 'Active' && now >= inv.endTime) {
+                    inv.status = 'Completed';
+                    const totalReturn = inv.returnAmount || inv.amount;
+                    user.withdrawBalance += totalReturn;
+                    updated = true;
+                }
+            });
+            if (updated) {
+                await user.save();
             }
-        });
-    });
-
-    if (updated) {
-        writeDB(db);
+        }
+    } catch (err) {
+        console.error('[INVESTMENT TIMER ERROR]:', err.message);
     }
 }, 10000);
-
-// Ensure default admin exists
-const dbInit = readDB();
-const adminExists = dbInit.users.find(u => u.username === '@7071088675' || u.is_admin);
-if (!adminExists) {
-    dbInit.users.push({
-        uid: 'UID10001',
-        username: '@7071088675',
-        name: 'Admin',
-        password: 'Faraz78678678690786',
-        rechargeBalance: 0,
-        withdrawBalance: 0,
-        is_admin: true,
-        bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
-        deposits: [],
-        withdrawals: [],
-        investments: [],
-        notifications: [],
-        referredBy: null,
-        referralCount: 0,
-        teamLevel: 'A',
-        lastCheckInDate: null
-    });
-    writeDB(dbInit);
-}
 
 app.use(session({
     secret: 'earnxpro_super_secret_key',
@@ -586,13 +617,12 @@ app.get('/login', (req, res) => {
     res.send(renderLayout('Login', formHtml, req.session.user, req));
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
     let { username, password } = req.body;
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
     
-    let db = readDB();
-    const user = db.users.find(u => u.username.toLowerCase() === username && u.password === password);
+    const user = await User.findOne({ username, password });
     if (user) {
         req.session.user = user;
         req.session.modalShown = false;
@@ -657,19 +687,22 @@ app.get('/signup', (req, res) => {
     res.send(renderLayout('Sign Up', formHtml, req.session.user, req));
 });
 
-app.post('/send-signup-otp', (req, res) => {
+app.post('/send-signup-otp', async (req, res) => {
     let { username, name, password, ref } = req.body;
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    let db = readDB();
-    if (db.users.find(u => u.username.toLowerCase() === username)) {
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    db.otps[username] = { otp, name, password, ref, type: 'signup' };
-    writeDB(db);
+    await Otp.findOneAndUpdate(
+        { username },
+        { otp, name, password, ref, type: 'signup' },
+        { upsert: true, new: true }
+    );
 
     sendRealOTP(username, otp, (success) => {
         if (!success) {
@@ -690,27 +723,27 @@ app.post('/send-signup-otp', (req, res) => {
     });
 });
 
-app.post('/verify-signup-otp', (req, res) => {
+app.post('/verify-signup-otp', async (req, res) => {
     let { username, otp } = req.body;
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    let db = readDB();
-    const record = db.otps[username];
+    const record = await Otp.findOne({ username });
 
     if (record && record.type === 'signup' && record.otp === otp) {
         const uniqueUid = 'UID' + Math.floor(10000 + Math.random() * 90000);
         
         let referredBy = null;
         if (record.ref) {
-            let referrer = db.users.find(u => u.uid === record.ref);
+            let referrer = await User.findOne({ uid: record.ref });
             if (referrer) {
                 referredBy = referrer.uid;
                 referrer.referralCount = (referrer.referralCount || 0) + 1;
+                await referrer.save();
             }
         }
 
-        db.users.push({
+        await User.create({
             uid: uniqueUid,
             username,
             name: record.name || '',
@@ -728,8 +761,7 @@ app.post('/verify-signup-otp', (req, res) => {
             teamLevel: 'A',
             lastCheckInDate: null
         });
-        delete db.otps[username];
-        writeDB(db);
+        await Otp.deleteOne({ username });
         req.session.modalShown = false;
         return res.redirect('/login');
     }
@@ -759,20 +791,22 @@ app.get('/forgot-password', (req, res) => {
     res.send(renderLayout('Forgot Password', formHtml, null, req));
 });
 
-app.post('/send-forgot-otp', (req, res) => {
+app.post('/send-forgot-otp', async (req, res) => {
     let { username } = req.body;
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    let db = readDB();
-    const user = db.users.find(u => u.username.toLowerCase() === username);
+    const user = await User.findOne({ username });
     if (!user) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    db.otps[username] = { otp, type: 'forgot' };
-    writeDB(db);
+    await Otp.findOneAndUpdate(
+        { username },
+        { otp, type: 'forgot' },
+        { upsert: true, new: true }
+    );
 
     sendRealOTP(username, otp, (success) => {
         if (!success) {
@@ -793,20 +827,19 @@ app.post('/send-forgot-otp', (req, res) => {
     });
 });
 
-app.post('/verify-and-reset', (req, res) => {
+app.post('/verify-and-reset', async (req, res) => {
     let { username, otp, newPassword } = req.body;
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    let db = readDB();
-    const record = db.otps[username];
+    const record = await Otp.findOne({ username });
 
     if (record && record.type === 'forgot' && record.otp === otp) {
-        let user = db.users.find(u => u.username.toLowerCase() === username);
+        let user = await User.findOne({ username });
         if (user) {
             user.password = newPassword;
-            delete db.otps[username];
-            writeDB(db);
+            await user.save();
+            await Otp.deleteOne({ username });
             return res.send(renderLayout('Success', `<p class="text-green-400 text-center font-bold text-base">Password updated successfully!</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Login Now</a>`, null, req));
         }
     }
@@ -814,10 +847,9 @@ app.post('/verify-and-reset', (req, res) => {
 });
 
 // Daily Check-In
-app.get('/daily-signin', (req, res) => {
+app.get('/daily-signin', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let user = db.users.find(u => u.username === req.session.user.username);
+    let user = await User.findOne({ username: req.session.user.username });
     
     const todayStr = new Date().toDateString();
     if (user.lastCheckInDate === todayStr) {
@@ -826,17 +858,16 @@ app.get('/daily-signin', (req, res) => {
 
     user.lastCheckInDate = todayStr;
     user.rechargeBalance = (user.rechargeBalance || 0) + 4;
-    writeDB(db);
+    await user.save();
     req.session.user = user;
 
     res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Recharge Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
 });
 
 // Home Page
-app.get('/home', (req, res) => {
+app.get('/home', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
 
     const todayStr = new Date().toDateString();
     const alreadyCheckedIn = currentUser.lastCheckInDate === todayStr;
@@ -896,12 +927,12 @@ app.get('/home', (req, res) => {
 });
 
 // Invest Page
-app.get('/invest', (req, res) => {
+app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
+    let products = await Product.find({});
 
-    let productsHtml = db.products.map((p, index) => {
+    let productsHtml = products.map((p, index) => {
         const hasInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
         
         return `
@@ -916,7 +947,7 @@ app.get('/invest', (req, res) => {
                 <p class="text-xs text-gray-400 mt-1">Duration: ${p.durationMinutes >= 60 ? (p.durationMinutes / 60) + ' Hours' : p.durationMinutes + ' Minutes'}</p>
             </div>
             <form action="/invest" method="POST" class="mt-4">
-                <input type="hidden" name="productIndex" value="${index}">
+                <input type="hidden" name="productId" value="${p._id}">
                 <button type="submit" id="investBtn_${index}" class="w-full ${hasInvested ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-sm transition-all" ${hasInvested ? 'disabled' : ''}>${hasInvested ? 'Already Invested' : 'Invest Now'}</button>
             </form>
         </div>
@@ -927,26 +958,24 @@ app.get('/invest', (req, res) => {
         <div class="space-y-6">
             <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>📦</span> Investment Products</h2>
             <div class="grid grid-cols-1 gap-4">
-                ${db.products.length ? productsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No products available currently.</p>'}
+                ${products.length ? productsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No products available currently.</p>'}
             </div>
         </div>
     `;
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-app.post('/invest', (req, res) => {
+app.post('/invest', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
-    const { productIndex } = req.body;
-    let db = readDB();
-    let user = db.users.find(u => u.username === req.session.user.username);
-    let product = db.products[productIndex];
+    const { productId } = req.body;
+    let user = await User.findOne({ username: req.session.user.username });
+    let product = await Product.findOne({ _id: productId });
 
     if (!user || !product) {
         return res.redirect('/invest');
     }
 
-    const productId = product._id;
-    const existingInvestment = (user.investments || []).find(inv => inv.productId === productId);
+    const existingInvestment = (user.investments || []).some(inv => inv.productId === productId);
     if (existingInvestment) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is product mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
@@ -965,16 +994,15 @@ app.post('/invest', (req, res) => {
             status: 'Active',
             date: new Date().toLocaleString()
         });
-        writeDB(db);
+        await user.save();
     }
     res.redirect('/invest');
 });
 
 // Team Page
-app.get('/team', (req, res) => {
+app.get('/team', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
 
     const referralLink = `https://earnxpro-1.onrender.com/signup?ref=${currentUser.uid}`;
 
@@ -1016,27 +1044,25 @@ app.get('/team', (req, res) => {
 });
 
 // Notifications API endpoints
-app.get('/api/notifications/count', (req, res) => {
+app.get('/api/notifications/count', async (req, res) => {
     if (!req.session.user) return res.status(401).json({ count: 0 });
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
     if (!currentUser || !currentUser.notifications) return res.json({ count: 0 });
     
     const unreadCount = currentUser.notifications.filter(n => !n.is_read).length;
     res.json({ count: unreadCount });
 });
 
-app.post('/api/notifications/mark-read', (req, res) => {
+app.post('/api/notifications/mark-read', async (req, res) => {
     try {
         if (!req.session.user) return res.status(401).json({ success: false, error: "Unauthorized" });
-        let db = readDB();
-        let user = db.users.find(u => u.username === req.session.user.username);
+        let user = await User.findOne({ username: req.session.user.username });
 
         if (user && user.notifications) {
             user.notifications.forEach(n => {
                 n.is_read = true;
             });
-            writeDB(db);
+            await user.save();
         }
 
         res.status(200).json({ success: true, message: "Notifications marked as read." });
@@ -1046,10 +1072,9 @@ app.post('/api/notifications/mark-read', (req, res) => {
 });
 
 // Dedicated Sub-Pages for Account Menu Items
-app.get('/account/investments', (req, res) => {
+app.get('/account/investments', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
 
     let myInvestmentsHtml = (currentUser.investments || []).map(inv => `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl border border-gray-800 text-sm flex justify-between items-center mb-3 shadow-2xl">
@@ -1075,12 +1100,11 @@ app.get('/account/investments', (req, res) => {
 
 app.get('/account/notifications', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
 
     if (currentUser && currentUser.notifications) {
         currentUser.notifications.forEach(n => { n.is_read = true; });
-        writeDB(db);
+        await currentUser.save();
     }
 
     let notificationsHtml = (currentUser.notifications || []).map(n => `
@@ -1105,10 +1129,9 @@ app.get('/account/notifications', async (req, res) => {
     res.send(renderLayout('System Notifications', content, req.session.user, req));
 });
 
-app.get('/account/deposits', (req, res) => {
+app.get('/account/deposits', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
 
     let depositHistoryHtml = (currentUser.deposits || []).map(d => `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 p-4 rounded-3xl text-xs flex justify-between items-center mb-3 shadow-2xl">
@@ -1135,10 +1158,9 @@ app.get('/account/deposits', (req, res) => {
     res.send(renderLayout('Deposit History', content, req.session.user, req));
 });
 
-app.get('/account/withdrawals', (req, res) => {
+app.get('/account/withdrawals', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
 
     let withdrawHistoryHtml = (currentUser.withdrawals || []).map(w => {
         let fixedAmt = Math.round(w.amount * (1 - 0.12));
@@ -1175,10 +1197,9 @@ app.get('/account/withdrawals', (req, res) => {
 });
 
 // Account Page
-app.get('/account', (req, res) => {
+app.get('/account', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let currentUser = db.users.find(u => u.username === req.session.user.username);
+    let currentUser = await User.findOne({ username: req.session.user.username });
     const unreadCountInitial = (currentUser.notifications || []).filter(n => !n.is_read).length;
 
     const content = `
@@ -1254,10 +1275,9 @@ app.get('/account', (req, res) => {
 });
 
 // Deposit Page
-app.get('/deposit', (req, res) => {
+app.get('/deposit', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let user = db.users.find(u => u.username === req.session.user.username);
+    let user = await User.findOne({ username: req.session.user.username });
     
     let assignedUpi = getRandomUpiId();
 
@@ -1406,7 +1426,7 @@ app.get('/deposit', (req, res) => {
     res.send(renderLayout('Deposit', content, req.session.user, req));
 });
 
-app.post('/deposit', upload.single('screenshot'), (req, res) => {
+app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { amount, utr, gateway } = req.body;
     
@@ -1415,17 +1435,8 @@ app.post('/deposit', upload.single('screenshot'), (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UTR! Please enter a valid 12-digit numeric reference number.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
 
-    let db = readDB();
-    let utrExists = false;
-    db.users.forEach(u => {
-        if (u.deposits) {
-            if (u.deposits.some(d => d.utr === utr)) {
-                utrExists = true;
-            }
-        }
-    });
-
-    if (utrExists) {
+    const existingUserWithUtr = await User.findOne({ "deposits.utr": utr });
+    if (existingUserWithUtr) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">This UTR / Transaction ID has already been submitted! Please enter a unique UTR.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
 
@@ -1433,7 +1444,7 @@ app.post('/deposit', upload.single('screenshot'), (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Payment screenshot is mandatory!</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
 
-    let user = db.users.find(u => u.username === req.session.user.username);
+    let user = await User.findOne({ username: req.session.user.username });
     if (user) {
         if (!user.deposits) user.deposits = [];
         user.deposits.push({ 
@@ -1444,16 +1455,15 @@ app.post('/deposit', upload.single('screenshot'), (req, res) => {
             status: 'Pending', 
             date: new Date().toLocaleString() 
         });
-        writeDB(db);
+        await user.save();
     }
     res.redirect('/deposit');
 });
 
 // Withdrawal Page
-app.get('/withdrawal', (req, res) => {
+app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
-    let user = db.users.find(u => u.username === req.session.user.username);
+    let user = await User.findOne({ username: req.session.user.username });
 
     let historyHtml = (user.withdrawals || []).map(w => {
         let fixedAmt = Math.round(w.amount * (1 - 0.12));
@@ -1585,8 +1595,7 @@ app.get('/withdrawal', (req, res) => {
 app.post('/api/withdrawal', async (req, res) => {
     try {
         const { userId, amount, password, accName, accNo, ifsc, phone } = req.body;
-        let db = readDB();
-        let user = db.users.find(u => u.uid === userId || u.username === req.session.user.username);
+        let user = await User.findOne({ $or: [{ uid: userId }, { username: req.session.user?.username }] });
         
         if (!user || user.password !== password) {
             return res.status(400).json({ success: false, message: "Incorrect signup password verification!" });
@@ -1622,7 +1631,7 @@ app.post('/api/withdrawal', async (req, res) => {
                 status: 'Pending', 
                 date: new Date().toLocaleString() 
             });
-            writeDB(db);
+            await user.save();
             
             return res.status(200).json({
                 success: true,
@@ -1637,11 +1646,10 @@ app.post('/api/withdrawal', async (req, res) => {
     }
 });
 
-app.post('/withdrawal', (req, res) => {
+app.post('/withdrawal', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { amount, accName, accNo, ifsc, phone, signupPasswordVerify } = req.body;
-    let db = readDB();
-    let user = db.users.find(u => u.username === req.session.user.username);
+    let user = await User.findOne({ username: req.session.user.username });
     
     if (!user || user.password !== signupPasswordVerify) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Incorrect signup password verification!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
@@ -1670,18 +1678,19 @@ app.post('/withdrawal', (req, res) => {
             status: 'Pending', 
             date: new Date().toLocaleString() 
         });
+        await user.save();
     }
-    writeDB(db);
     res.redirect('/withdrawal');
 });
 
 // ==================== ADMIN PANEL ====================
-app.get('/admin', (req, res) => {
+app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    let db = readDB();
     let tab = req.query.tab || 'users';
 
-    let regularUsers = db.users.filter(u => !u.is_admin);
+    let regularUsers = await User.find({ is_admin: { $ne: true } });
+    let products = await Product.find({});
+
     let usersHtml = regularUsers.map(u => `
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
             <div class="flex justify-between items-center mb-2">
@@ -1704,85 +1713,83 @@ app.get('/admin', (req, res) => {
     `).join('');
 
     let depositsHtml = [];
-    db.users.forEach(u => {
-        if (u.deposits) {
-            u.deposits.forEach((d, dIdx) => {
-                if (d.status === 'Pending') {
-                    depositsHtml.push(`
-                        <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
-                            <div>
-                                <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
-                                <p class="text-gray-300">Amt: ₹${d.amount} | UTR: <b class="text-emerald-400">${d.utr}</b></p>
-                                <p class="text-xs text-gray-400 mt-1">${d.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
-                                ${d.screenshotUrl ? `<a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline text-xs font-bold inline-block mt-2">🔍 Open Screenshot</a>` : ''}
-                            </div>
-                            <div class="flex space-x-2">
-                                <form action="/admin/action-deposit" method="POST">
-                                    <input type="hidden" name="username" value="${u.username}">
-                                    <input type="hidden" name="index" value="${dIdx}">
-                                    <input type="hidden" name="action" value="approve">
-                                    <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Approve</button>
-                                </form>
-                                <form action="/admin/action-deposit" method="POST">
-                                    <input type="hidden" name="username" value="${u.username}">
-                                    <input type="hidden" name="index" value="${dIdx}">
-                                    <input type="hidden" name="action" value="reject">
-                                    <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
-                                </form>
-                            </div>
+    let allUsersWithDeposits = await User.find({ "deposits.status": "Pending" });
+    allUsersWithDeposits.forEach(u => {
+        u.deposits.forEach((d, dIdx) => {
+            if (d.status === 'Pending') {
+                depositsHtml.push(`
+                    <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
+                        <div>
+                            <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
+                            <p class="text-gray-300">Amt: ₹${d.amount} | UTR: <b class="text-emerald-400">${d.utr}</b></p>
+                            <p class="text-xs text-gray-400 mt-1">${d.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
+                            ${d.screenshotUrl ? `<a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline text-xs font-bold inline-block mt-2">🔍 Open Screenshot</a>` : ''}
                         </div>
-                    `);
-                }
-            });
-        }
+                        <div class="flex space-x-2">
+                            <form action="/admin/action-deposit" method="POST">
+                                <input type="hidden" name="userId" value="${u._id}">
+                                <input type="hidden" name="index" value="${dIdx}">
+                                <input type="hidden" name="action" value="approve">
+                                <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Approve</button>
+                            </form>
+                            <form action="/admin/action-deposit" method="POST">
+                                <input type="hidden" name="userId" value="${u._id}">
+                                <input type="hidden" name="index" value="${dIdx}">
+                                <input type="hidden" name="action" value="reject">
+                                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
+                            </form>
+                        </div>
+                    </div>
+                `);
+            }
+        });
     });
 
     let withdrawalsHtml = [];
-    db.users.forEach(u => {
-        if (u.withdrawals) {
-            u.withdrawals.forEach((w, wIdx) => {
-                if (w.status === 'Pending') {
-                    withdrawalsHtml.push(`
-                        <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
-                            <div>
-                                <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
-                                <p class="text-gray-300">Amt: ₹${w.amount} | A/C: <b class="text-purple-400">${w.bankDetails?.accNo}</b></p>
-                                <p class="text-xs text-gray-400 mt-1">${w.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
-                            </div>
-                            <div class="flex space-x-2">
-                                <form action="/admin/action-withdrawal" method="POST">
-                                    <input type="hidden" name="username" value="${u.username}">
-                                    <input type="hidden" name="index" value="${wIdx}">
-                                    <input type="hidden" name="action" value="approve">
-                                    <button type="submit" class="bg-purple-600 hover:bg-purple-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Approve</button>
-                                </form>
-                                <form action="/admin/action-withdrawal" method="POST">
-                                    <input type="hidden" name="username" value="${u.username}">
-                                    <input type="hidden" name="index" value="${wIdx}">
-                                    <input type="hidden" name="action" value="reject">
-                                    <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
-                                </form>
-                            </div>
+    let allUsersWithWithdrawals = await User.find({ "withdrawals.status": "Pending" });
+    allUsersWithWithdrawals.forEach(u => {
+        u.withdrawals.forEach((w, wIdx) => {
+            if (w.status === 'Pending') {
+                withdrawalsHtml.push(`
+                    <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
+                        <div>
+                            <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
+                            <p class="text-gray-300">Amt: ₹${w.amount} | A/C: <b class="text-purple-400">${w.bankDetails?.accNo}</b></p>
+                            <p class="text-xs text-gray-400 mt-1">${w.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
                         </div>
-                    `);
-                }
-            });
-        }
-    });
-
-    let productListHtml = db.products.map((p, pIdx) => {
-        let investorsList = [];
-        db.users.forEach(u => {
-            if (u.investments) {
-                u.investments.forEach(inv => {
-                    if (inv.productId === p._id) {
-                        investorsList.push(`<span class="bg-gray-900 text-xs px-2.5 py-1 rounded-lg text-cyan-300 border border-gray-800 font-medium">UID: ${u.uid} (₹${inv.amount}) - ${inv.status}</span>`);
-                    }
-                });
+                        <div class="flex space-x-2">
+                            <form action="/admin/action-withdrawal" method="POST">
+                                <input type="hidden" name="userId" value="${u._id}">
+                                <input type="hidden" name="index" value="${wIdx}">
+                                <input type="hidden" name="action" value="approve">
+                                <button type="submit" class="bg-purple-600 hover:bg-purple-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Approve</button>
+                            </form>
+                            <form action="/admin/action-withdrawal" method="POST">
+                                <input type="hidden" name="userId" value="${u._id}">
+                                <input type="hidden" name="index" value="${wIdx}">
+                                <input type="hidden" name="action" value="reject">
+                                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
+                            </form>
+                        </div>
+                    </div>
+                `);
             }
         });
+    });
 
-        return `
+    let productListHtml = [];
+    for (let p of products) {
+        let investorsList = [];
+        let allUsers = await User.find({ "investments.productId": p._id });
+        allUsers.forEach(u => {
+            u.investments.forEach(inv => {
+                if (inv.productId === p._id) {
+                    investorsList.push(`<span class="bg-gray-900 text-xs px-2.5 py-1 rounded-lg text-cyan-300 border border-gray-800 font-medium">UID: ${u.uid} (₹${inv.amount}) - ${inv.status}</span>`);
+                }
+            });
+        });
+
+        productListHtml.push(`
             <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm space-y-2 border border-gray-700 shadow">
                 <div class="flex justify-between items-center">
                     <div>
@@ -1790,7 +1797,7 @@ app.get('/admin', (req, res) => {
                         <p class="text-gray-300 text-xs mt-0.5">Price: ₹${p.price} | Return: ₹${p.returnAmount} | Timer: ${p.durationMinutes >= 60 ? (p.durationMinutes / 60) + ' Hours' : p.durationMinutes + 'm'}</p>
                     </div>
                     <form action="/admin/delete-product" method="POST">
-                        <input type="hidden" name="index" value="${pIdx}">
+                        <input type="hidden" name="productId" value="${p._id}">
                         <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
                     </form>
                 </div>
@@ -1801,8 +1808,8 @@ app.get('/admin', (req, res) => {
                     </div>
                 </div>
             </div>
-        `;
-    }).join('');
+        `);
+    }
 
     let userOptionsHtml = regularUsers.map(u => `<option value="${u.username}">UID: ${u.uid} (${u.username})</option>`).join('');
 
@@ -1834,7 +1841,7 @@ app.get('/admin', (req, res) => {
                     <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-yellow-500/20">Add Product</button>
                 </form>
                 <h3 class="font-bold text-yellow-400 text-base mt-6">Active Products & Investor Details</h3>
-                <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml : '<p class="text-gray-400 text-sm text-center py-6">No products added.</p>'}</div>
+                <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml.join('') : '<p class="text-gray-400 text-sm text-center py-6">No products added.</p>'}</div>
             </div>
         `;
     } else if (tab === 'send-funds') {
@@ -1899,7 +1906,7 @@ app.get('/admin', (req, res) => {
     res.send(renderLayout('Admin Panel', content, req.session.user, req));
 });
 
-app.post('/admin/add-product', (req, res) => {
+app.post('/admin/add-product', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { name, price, returnAmount, durationValue, durationType, imageUrl } = req.body;
     
@@ -1908,8 +1915,7 @@ app.post('/admin/add-product', (req, res) => {
         durationMinutes = durationMinutes * 60;
     }
 
-    let db = readDB();
-    db.products.push({
+    await Product.create({
         _id: 'prod_' + Date.now(),
         name,
         price: parseFloat(price),
@@ -1917,38 +1923,31 @@ app.post('/admin/add-product', (req, res) => {
         durationMinutes,
         imageUrl: imageUrl || ''
     });
-    writeDB(db);
     res.redirect('/admin?tab=products');
 });
 
-app.post('/admin/delete-product', (req, res) => {
+app.post('/admin/delete-product', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { index } = req.body;
-    let db = readDB();
-    if (db.products && db.products[index]) {
-        db.products.splice(index, 1);
-        writeDB(db);
-    }
+    const { productId } = req.body;
+    await Product.deleteOne({ _id: productId });
     res.redirect('/admin?tab=products');
 });
 
-app.post('/admin/add-balance', (req, res) => {
+app.post('/admin/add-balance', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, amount } = req.body;
-    let db = readDB();
-    let user = db.users.find(u => u.username === username);
+    let user = await User.findOne({ username });
     if (user) {
         user.rechargeBalance = (user.rechargeBalance || 0) + parseFloat(amount);
-        writeDB(db);
+        await user.save();
     }
     res.redirect('/admin?tab=users');
 });
 
-app.post('/admin/action-deposit', (req, res) => {
+app.post('/admin/action-deposit', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { username, index, action } = req.body;
-    let db = readDB();
-    let user = db.users.find(u => u.username === username);
+    const { userId, index, action } = req.body;
+    let user = await User.findById(userId);
     if (user && user.deposits && user.deposits[index]) {
         let deposit = user.deposits[index];
         if (deposit.status === 'Pending') {
@@ -1957,7 +1956,7 @@ app.post('/admin/action-deposit', (req, res) => {
                 user.rechargeBalance = (user.rechargeBalance || 0) + deposit.amount;
 
                 if (user.referredBy) {
-                    let referrer = db.users.find(u => u.uid === user.referredBy);
+                    let referrer = await User.findOne({ uid: user.referredBy });
                     if (referrer) {
                         let bonus = deposit.amount * 0.01;
                         referrer.rechargeBalance = (referrer.rechargeBalance || 0) + bonus;
@@ -1970,22 +1969,22 @@ app.post('/admin/action-deposit', (req, res) => {
                             is_read: false,
                             created_at: new Date().toISOString()
                         });
+                        await referrer.save();
                     }
                 }
             } else if (action === 'reject') {
                 deposit.status = 'Failed';
             }
-            writeDB(db);
+            await user.save();
         }
     }
     res.redirect('/admin?tab=deposits');
 });
 
-app.post('/admin/action-withdrawal', (req, res) => {
+app.post('/admin/action-withdrawal', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { username, index, action } = req.body;
-    let db = readDB();
-    let user = db.users.find(u => u.username === username);
+    const { userId, index, action } = req.body;
+    let user = await User.findById(userId);
     if (user && user.withdrawals && user.withdrawals[index]) {
         let withdrawal = user.withdrawals[index];
         if (withdrawal.status === 'Pending') {
@@ -1995,17 +1994,16 @@ app.post('/admin/action-withdrawal', (req, res) => {
                 withdrawal.status = 'Failed';
                 user.withdrawBalance = (user.withdrawBalance || 0) + withdrawal.amount;
             }
-            writeDB(db);
+            await user.save();
         }
     }
     res.redirect('/admin?tab=withdrawals');
 });
 
-app.post('/admin/send-funds', (req, res) => {
+app.post('/admin/send-funds', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, amount } = req.body;
-    let db = readDB();
-    let user = db.users.find(u => u.username === username);
+    let user = await User.findOne({ username });
     if (user) {
         let amt = parseFloat(amount);
         user.rechargeBalance = (user.rechargeBalance || 0) + amt;
@@ -2017,16 +2015,15 @@ app.post('/admin/send-funds', (req, res) => {
             status: 'Completed',
             date: new Date().toLocaleString()
         });
-        writeDB(db);
+        await user.save();
     }
     res.redirect('/admin?tab=send-funds');
 });
 
-app.post('/admin/send-message', (req, res) => {
+app.post('/admin/send-message', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, message } = req.body;
-    let db = readDB();
-    let user = db.users.find(u => u.username === username);
+    let user = await User.findOne({ username });
     if (user) {
         if (!user.notifications) user.notifications = [];
         user.notifications.push({
@@ -2037,7 +2034,7 @@ app.post('/admin/send-message', (req, res) => {
             is_read: false,
             created_at: new Date().toISOString()
         });
-        writeDB(db);
+        await user.save();
     }
     res.redirect('/admin?tab=send-funds');
 });
