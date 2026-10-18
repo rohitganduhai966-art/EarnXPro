@@ -10,6 +10,9 @@ const axios = require('axios');
 const app = express();
 const PORT = 7700;
 
+// Direct Working Logo Image URL
+const LOGO_URL = "https://i.ibb.co/W45ZtnvZ/8121.jpg";
+
 // MongoDB Atlas Connection Setup
 const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
@@ -100,7 +103,6 @@ const ChatId = mongoose.model('ChatId', chatIdSchema);
 // List of Rotating UPI IDs for Deposits
 const ROTATING_UPI_IDS = [
     'Rohit.m820@ptaxis',
-    '6377833820-3@ibl',
     '6377833820-2.wallet@phonepe',
     '7071088675@mbk',
     '7071088675@mbkns',
@@ -113,7 +115,7 @@ function getRandomUpiId() {
     return ROTATING_UPI_IDS[randomIndex];
 }
 
-// Ensure uploads directory exists for screenshots and assets
+// Ensure uploads directory exists for screenshots
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -310,7 +312,7 @@ app.use(session({
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Layout Template with Permanent Local Asset Logo Route
+// Layout Template
 function renderLayout(title, content, user, req) {
     let bottomNav = '';
     let topHeaderRight = '';
@@ -437,7 +439,7 @@ function renderLayout(title, content, user, req) {
                 border: 1px solid rgba(56, 189, 248, 0.15);
                 color: #fff;
                 display: flex;
-                justify-content: space-between;
+                justify-between: center;
                 align-items: center;
                 padding: 15px 18px;
                 border-radius: 14px;
@@ -524,7 +526,7 @@ function renderLayout(title, content, user, req) {
         <header class="bg-gray-900/90 backdrop-blur-xl border-b border-gray-800 p-3 flex justify-between items-center sticky top-0 z-40 shadow-2xl">
             <a href="/" class="flex items-center gap-2.5 group">
                 <div class="relative w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 group-hover:scale-105 transition-transform border border-emerald-500/30">
-                    <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                    <img src="${LOGO_URL}" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                 </div>
                 <div class="flex flex-col">
                     <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">EarnX <span class="text-cyan-400 font-extrabold">Pro</span></span>
@@ -572,7 +574,7 @@ app.get('/login', (req, res) => {
             <div class="flex items-center justify-center mb-6">
                 <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
                     <div class="relative w-11 h-11 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
-                        <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                        <img src="${LOGO_URL}" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                     </div>
                     <div class="flex flex-col text-left">
                         <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
@@ -627,7 +629,7 @@ app.get('/signup', (req, res) => {
             <div class="flex items-center justify-center mb-6">
                 <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
                     <div class="relative w-11 h-11 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
-                        <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                        <img src="${LOGO_URL}" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                     </div>
                     <div class="flex flex-col text-left">
                         <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
@@ -1189,7 +1191,7 @@ app.get('/account', async (req, res) => {
         <div class="flex items-center justify-center py-2">
             <div class="inline-flex items-center gap-3 bg-gradient-to-br from-gray-900/95 to-slate-900/95 backdrop-blur-2xl border border-emerald-500/20 px-5 py-2.5 rounded-2xl shadow-2xl">
                 <div class="relative w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
-                    <img src="/uploads/logo.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
+                    <img src="${LOGO_URL}" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                 </div>
                 <div class="flex flex-col text-left">
                     <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
