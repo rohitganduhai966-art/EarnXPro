@@ -119,7 +119,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-// Correct calculation logic for updating balances or order completion
 function calculateOrderRevenue(principalAmount, revenueRatePercent) {
     const rate = revenueRatePercent / 100;
     const profit = principalAmount * rate;
@@ -127,13 +126,11 @@ function calculateOrderRevenue(principalAmount, revenueRatePercent) {
     return { profit, totalReturn };
 }
 
-// UTR validation function updated to exact 12-digit numeric format
 function validateUTR(utr) {
     const utrRegex = /^[0-9]{12}$/;
     return utrRegex.test(utr);
 }
 
-// Ensure default admin exists in MongoDB on startup
 async function ensureDefaultAdmin() {
     try {
         const admin = await User.findOne({ is_admin: true });
@@ -164,7 +161,6 @@ async function ensureDefaultAdmin() {
 }
 setTimeout(ensureDefaultAdmin, 2000);
 
-// Multer Storage Configuration for Deposits Screenshot
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         cb(null, UPLOAD_DIR);
@@ -178,14 +174,12 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// ==================== DYNAMIC TELEGRAM BOT & WEBHOOK SYNC ====================
 const TELEGRAM_BOT_TOKEN = '8808651451:AAGvbN8t1_CstrgvukjMqABd5D6i5138Z54';
 const RENDER_DOMAIN = 'https://earnxpro-1.onrender.com';
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
-// TELEGRAM WEBHOOK ENDPOINT: Automatically captures Chat IDs when users press /start
 app.post('/telegram-webhook', async (req, res) => {
     try {
         const update = req.body;
@@ -202,7 +196,6 @@ app.post('/telegram-webhook', async (req, res) => {
                 );
                 console.log(`[WEBHOOK SUCCESS] Captured Chat ID ${chatId} for ${formattedUsername}`);
 
-                // Send auto-acknowledgement back to Telegram user
                 if (msg.text && msg.text.startsWith('/start')) {
                     axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                         chat_id: chatId,
@@ -218,7 +211,6 @@ app.post('/telegram-webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-// Auto-register Webhook with Telegram on server startup
 async function setupTelegramWebhook() {
     try {
         const webhookUrl = `${RENDER_DOMAIN}/telegram-webhook`;
@@ -235,7 +227,6 @@ async function sendRealOTP(username, otp, callback) {
         let chatIdRecord = await ChatId.findOne({ username: username.toLowerCase() });
         let targetChatId = chatIdRecord ? chatIdRecord.chatId : null;
 
-        // Fallback: If webhook missed it, attempt quick check via getUpdates
         if (!targetChatId) {
             try {
                 const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
@@ -286,7 +277,6 @@ async function sendRealOTP(username, otp, callback) {
     }
 }
 
-// Background Task: Check Investments Timers every 10 seconds
 setInterval(async () => {
     try {
         const now = Date.now();
@@ -319,7 +309,7 @@ app.use(session({
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-// Layout Template with Ultra-Professional 3D Glassmorphism Logo & Background Gradients
+// Layout Template with Updated Logo Image Integration
 function renderLayout(title, content, user, req) {
     let bottomNav = '';
     let topHeaderRight = '';
@@ -532,10 +522,8 @@ function renderLayout(title, content, user, req) {
         ${channelModalHtml}
         <header class="bg-gray-900/90 backdrop-blur-xl border-b border-gray-800 p-3 flex justify-between items-center sticky top-0 z-40 shadow-2xl">
             <a href="/" class="flex items-center gap-2.5 group">
-                <div class="relative w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30 group-hover:scale-105 transition-transform">
-                    <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
-                        <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-sm tracking-tighter">EX</span>
-                    </div>
+                <div class="relative w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 group-hover:scale-105 transition-transform border border-emerald-500/30">
+                    <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                 </div>
                 <div class="flex flex-col">
                     <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">EarnX <span class="text-cyan-400 font-extrabold">Pro</span></span>
@@ -568,7 +556,6 @@ app.get('/', (req, res) => {
     res.redirect('/login');
 });
 
-// Logout Route
 app.get('/logout', (req, res) => {
     req.session.destroy((err) => {
         res.redirect('/login');
@@ -583,10 +570,8 @@ app.get('/login', (req, res) => {
             <div class="absolute -top-16 -right-16 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl"></div>
             <div class="flex items-center justify-center mb-6">
                 <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
-                    <div class="relative w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30">
-                        <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
-                            <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-lg tracking-tighter">EX</span>
-                        </div>
+                    <div class="relative w-11 h-11 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
+                        <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                     </div>
                     <div class="flex flex-col text-left">
                         <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
@@ -631,7 +616,7 @@ app.post('/login', async (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup with Telegram Username & Direct Clickable Bot Link
+// Signup
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -640,10 +625,8 @@ app.get('/signup', (req, res) => {
             <div class="absolute -top-16 -right-16 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
             <div class="flex items-center justify-center mb-6">
                 <div class="inline-flex items-center gap-3 bg-gray-900/95 backdrop-blur-xl border border-gray-800 px-5 py-2.5 rounded-2xl shadow-xl">
-                    <div class="relative w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30">
-                        <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
-                            <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-lg tracking-tighter">EX</span>
-                        </div>
+                    <div class="relative w-11 h-11 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
+                        <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                     </div>
                     <div class="flex flex-col text-left">
                         <span class="text-xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
@@ -768,7 +751,7 @@ app.post('/verify-signup-otp', async (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Forgot Password with Direct Clickable Bot Link
+// Forgot Password
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
@@ -1043,7 +1026,6 @@ app.get('/team', async (req, res) => {
     res.send(renderLayout('Team', content, req.session.user, req));
 });
 
-// Notifications API endpoints
 app.get('/api/notifications/count', async (req, res) => {
     if (!req.session.user) return res.status(401).json({ count: 0 });
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1205,10 +1187,8 @@ app.get('/account', async (req, res) => {
     const content = `
         <div class="flex items-center justify-center py-2">
             <div class="inline-flex items-center gap-3 bg-gradient-to-br from-gray-900/95 to-slate-900/95 backdrop-blur-2xl border border-emerald-500/20 px-5 py-2.5 rounded-2xl shadow-2xl">
-                <div class="relative w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 via-teal-500 to-cyan-400 p-[1px] shadow-lg shadow-emerald-500/30">
-                    <div class="w-full h-full bg-gray-950 rounded-[11px] flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-950">
-                        <span class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 font-black text-xl tracking-tighter">EX</span>
-                    </div>
+                <div class="relative w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-emerald-500/30 border border-emerald-500/30">
+                    <img src="https://i.ibb.co/6y45s84/8113.jpg" alt="EarnX Pro Logo" class="w-full h-full object-cover">
                 </div>
                 <div class="flex flex-col text-left">
                     <span class="text-lg font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">
