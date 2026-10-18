@@ -129,13 +129,61 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-// ==================== DYNAMIC TELEGRAM BOT & ON-DEMAND CHAT ID SYNC ====================
+// ==================== DYNAMIC TELEGRAM BOT & WEBHOOK SYNC ====================
 const TELEGRAM_BOT_TOKEN = '8808651451:AAGvbN8t1_CstrgvukjMqABd5D6i5138Z54';
+const RENDER_DOMAIN = 'https://earnxpro-1.onrender.com';
+
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+
+// TELEGRAM WEBHOOK ENDPOINT: Automatically captures Chat IDs when users press /start
+app.post('/telegram-webhook', (req, res) => {
+    try {
+        const update = req.body;
+        const msg = update.message || update.edited_message;
+        if (msg && msg.from) {
+            const rawUsername = msg.from.username;
+            const chatId = msg.from.id;
+            if (rawUsername) {
+                const formattedUsername = '@' + rawUsername.toLowerCase();
+                let db = readDB();
+                db.chatIds[formattedUsername] = chatId;
+                writeDB(db);
+                console.log(`[WEBHOOK SUCCESS] Captured Chat ID ${chatId} for ${formattedUsername}`);
+
+                // Send auto-acknowledgement back to Telegram user
+                if (msg.text && msg.text.startsWith('/start')) {
+                    axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+                        chat_id: chatId,
+                        text: `*Welcome to EarnX Pro Official OTP Verification Bot!*\n\nYour account is now verified and linked with username *${formattedUsername}*. You will receive your OTPs here directly.`,
+                        parse_mode: 'Markdown'
+                    }).catch(e => console.error('[BOT AUTO REPLY ERROR]:', e.message));
+                }
+            }
+        }
+    } catch (err) {
+        console.error('[WEBHOOK PROCESS ERROR]:', err.message);
+    }
+    res.sendStatus(200);
+});
+
+// Auto-register Webhook with Telegram on server startup
+async function setupTelegramWebhook() {
+    try {
+        const webhookUrl = `${RENDER_DOMAIN}/telegram-webhook`;
+        const setUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${webhookUrl}`;
+        const response = await axios.get(setUrl);
+        console.log('[TELEGRAM WEBHOOK CONFIG]:', response.data.description || 'Webhook Configured');
+    } catch (err) {
+        console.error('[TELEGRAM WEBHOOK ERROR]:', err.message);
+    }
+}
 
 async function sendRealOTP(username, otp, callback) {
     let db = readDB();
-    let targetChatId = db.chatIds[username];
+    let targetChatId = db.chatIds[username.toLowerCase()];
 
+    // Fallback: If webhook missed it, attempt quick check via getWebhookUpdates/getUpdates
     if (!targetChatId) {
         try {
             const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
@@ -232,8 +280,6 @@ if (!adminExists) {
     writeDB(dbInit);
 }
 
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
 app.use(session({
     secret: 'earnxpro_super_secret_key',
     resave: false,
@@ -555,7 +601,7 @@ app.post('/login', (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup with Telegram Username & Direct Clickable Bot Link (telegram.me used)
+// Signup with Telegram Username & Direct Clickable Bot Link
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -690,7 +736,7 @@ app.post('/verify-signup-otp', (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Forgot Password with Direct Clickable Bot Link (telegram.me used)
+// Forgot Password with Direct Clickable Bot Link
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
@@ -1996,6 +2042,7 @@ app.post('/admin/send-message', (req, res) => {
     res.redirect('/admin?tab=send-funds');
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+    await setupTelegramWebhook();
 });
