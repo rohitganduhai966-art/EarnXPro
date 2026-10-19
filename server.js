@@ -427,7 +427,7 @@ function renderLayout(title, content, user, req) {
                 border: 1px solid rgba(56, 189, 248, 0.15);
                 color: #fff;
                 display: flex;
-                justify-content: space-between;
+                justify-between: space-between;
                 align-items: center;
                 padding: 15px 18px;
                 border-radius: 14px;
@@ -1374,10 +1374,6 @@ app.get('/deposit', async (req, res) => {
                 }
 
                 window.location.href = targetUrl;
-
-                setTimeout(() => {
-                    window.location.href = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                }, 500);
             }
 
             document.getElementById('submitProofBtn').addEventListener('click', async (e) => {
