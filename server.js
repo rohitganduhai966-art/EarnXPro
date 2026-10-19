@@ -1363,22 +1363,20 @@ app.get('/deposit', async (req, res) => {
                 const upiId = '${assignedUpi}';
                 let targetUrl = '';
 
-                // Application Specific Custom Intent Scheme Triggers
                 if (app === 'gpay') {
-                    targetUrl = `intent://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end;`;
+                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end;';
                 } else if (app === 'phonepe') {
-                    targetUrl = `intent://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR#Intent;scheme=upi;package=com.phonepe.app;end;`;
+                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.phonepe.app;end;';
                 } else if (app === 'paytm') {
-                    targetUrl = `paytmmp://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR`;
+                    targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (app === 'mobikwik') {
-                    targetUrl = `intent://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR#Intent;scheme=upi;package=com.mobikwik_new;end;`;
+                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.mobikwik_new;end;';
                 }
 
-                // Fallback attempt for standard URI if intent fails or non-android
                 window.location.href = targetUrl;
 
                 setTimeout(() => {
-                    window.location.href = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR`;
+                    window.location.href = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 }, 500);
             }
 
