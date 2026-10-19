@@ -427,7 +427,7 @@ function renderLayout(title, content, user, req) {
                 border: 1px solid rgba(56, 189, 248, 0.15);
                 color: #fff;
                 display: flex;
-                justify-between: space-between;
+                justify-content: space-between;
                 align-items: center;
                 padding: 15px 18px;
                 border-radius: 14px;
@@ -1363,14 +1363,15 @@ app.get('/deposit', async (req, res) => {
                 const upiId = '${assignedUpi}';
                 let targetUrl = '';
 
+                // Universal UPI deep link format for hassle-free direct opening without Play Store redirect
                 if (app === 'gpay') {
-                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end;';
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (app === 'phonepe') {
-                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.phonepe.app;end;';
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (app === 'paytm') {
                     targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (app === 'mobikwik') {
-                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.mobikwik_new;end;';
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 }
 
                 window.location.href = targetUrl;
