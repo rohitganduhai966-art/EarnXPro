@@ -1303,10 +1303,10 @@ app.get('/deposit', async (req, res) => {
                 </div>
 
                 <div class="upi-options-grid grid grid-cols-2 gap-2.5">
-                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Google Pay</button>
-                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">PhonePe</button>
-                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Paytm</button>
-                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">MobiKwik</button>
+                    <button type="button" onclick="launchApp('gpay')" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Google Pay</button>
+                    <button type="button" onclick="launchApp('phonepe')" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">PhonePe</button>
+                    <button type="button" onclick="launchApp('paytm')" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Paytm</button>
+                    <button type="button" onclick="launchApp('mobikwik')" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">MobiKwik</button>
                 </div>
 
                 <form action="/deposit" method="POST" enctype="multipart/form-data" class="space-y-3" id="depositForm">
@@ -1358,17 +1358,28 @@ app.get('/deposit', async (req, res) => {
                 }, 1000);
             });
 
-            function launchUpi() {
+            function launchApp(app) {
                 const amt = document.getElementById('deposit_amount').value;
                 const upiId = '${assignedUpi}';
-                const rawUpi = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                let targetUrl = '';
 
-                const link = document.createElement('a');
-                link.href = rawUpi;
-                link.target = '_self';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                // Application Specific Custom Intent Scheme Triggers
+                if (app === 'gpay') {
+                    targetUrl = `intent://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end;`;
+                } else if (app === 'phonepe') {
+                    targetUrl = `intent://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR#Intent;scheme=upi;package=com.phonepe.app;end;`;
+                } else if (app === 'paytm') {
+                    targetUrl = `paytmmp://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR`;
+                } else if (app === 'mobikwik') {
+                    targetUrl = `intent://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR#Intent;scheme=upi;package=com.mobikwik_new;end;`;
+                }
+
+                // Fallback attempt for standard URI if intent fails or non-android
+                window.location.href = targetUrl;
+
+                setTimeout(() => {
+                    window.location.href = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=EarnXPro&am=${amt}&cu=INR`;
+                }, 500);
             }
 
             document.getElementById('submitProofBtn').addEventListener('click', async (e) => {
