@@ -121,18 +121,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
 
-function calculateOrderRevenue(principalAmount, revenueRatePercent) {
-    const rate = revenueRatePercent / 100;
-    const profit = principalAmount * rate;
-    const totalReturn = principalAmount + profit;
-    return { profit, totalReturn };
-}
-
-function validateUTR(utr) {
-    const utrRegex = /^[0-9]{12}$/;
-    return utrRegex.test(utr);
-}
-
 async function ensureDefaultAdmin() {
     try {
         const admin = await User.findOne({ is_admin: true });
@@ -1315,10 +1303,10 @@ app.get('/deposit', async (req, res) => {
                 </div>
 
                 <div class="upi-options-grid grid grid-cols-2 gap-2.5">
-                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Google Pay</button>
-                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">PhonePe</button>
-                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Paytm</button>
-                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">MobiKwik</button>
+                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Google Pay</button>
+                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">PhonePe</button>
+                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Paytm</button>
+                    <button type="button" onclick="launchUpi()" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">MobiKwik</button>
                 </div>
 
                 <form action="/deposit" method="POST" enctype="multipart/form-data" class="space-y-3" id="depositForm">
@@ -1370,11 +1358,17 @@ app.get('/deposit', async (req, res) => {
                 }, 1000);
             });
 
-            function openUpiApp() {
+            function launchUpi() {
                 const amt = document.getElementById('deposit_amount').value;
                 const upiId = '${assignedUpi}';
-                const upiUri = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                window.location.href = upiUri;
+                const rawUpi = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+
+                const link = document.createElement('a');
+                link.href = rawUpi;
+                link.target = '_self';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
             }
 
             document.getElementById('submitProofBtn').addEventListener('click', async (e) => {
