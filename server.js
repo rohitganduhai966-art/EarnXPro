@@ -1315,10 +1315,10 @@ app.get('/deposit', async (req, res) => {
                 </div>
 
                 <div class="upi-options-grid grid grid-cols-2 gap-2.5">
-                    <a id="gpayLink" href="#" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">Google Pay</a>
-                    <a id="phonepeLink" href="#" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">PhonePe</a>
-                    <a id="paytmLink" href="#" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">Paytm</a>
-                    <a id="mobikwikLink" href="#" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow">MobiKwik</a>
+                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Google Pay</button>
+                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">PhonePe</button>
+                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Paytm</button>
+                    <button type="button" onclick="openUpiApp()" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">MobiKwik</button>
                 </div>
 
                 <form action="/deposit" method="POST" enctype="multipart/form-data" class="space-y-3" id="depositForm">
@@ -1356,15 +1356,6 @@ app.get('/deposit', async (req, res) => {
                 document.getElementById('step-amount').style.display = 'none';
                 document.getElementById('step-gateway').style.display = 'block';
 
-                // Setup Universal Deep Links for Apps
-                const upiId = '${assignedUpi}';
-                const upiUri = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                
-                document.getElementById('gpayLink').href = upiUri;
-                document.getElementById('phonepeLink').href = upiUri;
-                document.getElementById('paytmLink').href = upiUri;
-                document.getElementById('mobikwikLink').href = upiUri;
-
                 let timeLeft = 12 * 60;
                 timerInterval = setInterval(() => {
                     let min = Math.floor(timeLeft / 60);
@@ -1378,6 +1369,13 @@ app.get('/deposit', async (req, res) => {
                     timeLeft--;
                 }, 1000);
             });
+
+            function openUpiApp() {
+                const amt = document.getElementById('deposit_amount').value;
+                const upiId = '${assignedUpi}';
+                const upiUri = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                window.location.href = upiUri;
+            }
 
             document.getElementById('submitProofBtn').addEventListener('click', async (e) => {
                 e.preventDefault();
