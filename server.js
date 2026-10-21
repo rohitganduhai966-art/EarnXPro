@@ -104,55 +104,43 @@ const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
 // ==========================================
-// ⚙️ BREVO SMTP CONFIGURATION
+// ⚙️ BREVO HTTP API CONFIGURATION
 // ==========================================
-const BREVO_USER = 'fatimaaiza317@gmail.com'; // Aapka Brevo Registered Email
+const BREVO_USER = 'fatimaaiza317@gmail.com'; //[span_1](start_span)[span_1](end_span)[span_2](start_span)[span_2](end_span)
 
-// 🔽 LINE 98: APNI BREVO SMTP KEY PASTE KARO 🔽
+// 🔽 Yahan apni Brevo API / SMTP Key paste karo 🔽
 const BREVO_PASS = 'bskFILWknjyugrN'; 
 
-const emailTransporter = nodemailer.createTransport({
-    host: 'smtp-relay.brevo.com',
-    port: 587,
-    secure: false, // TLS 587
-    auth: {
-        user: BREVO_USER,
-        pass: BREVO_PASS
-    },
-    tls: {
-        rejectUnauthorized: false
-    },
-    connectionTimeout: 15000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000
-});
-
 async function sendEmailOTP(recipientEmail, otp, callback) {
-    const mailOptions = {
-        from: `"EarnX Pro Verification" <${BREVO_USER}>`,
-        to: recipientEmail,
-        subject: 'EarnX Pro - Account Verification OTP',
-        html: `
-            <div style="font-family: Arial, sans-serif; padding: 25px; background-color: #0b0f19; color: #ffffff; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
-                <h2 style="color: #10b981; margin-top: 0;">EarnX Pro Verification Code</h2>
-                <p style="color: #d1d5db; font-size: 14px;">Your one-time password (OTP) for secure account verification is:</p>
-                <div style="margin: 20px 0;">
-                    <span style="color: #3b82f6; font-size: 28px; font-weight: bold; letter-spacing: 6px; background: #1f2937; padding: 12px 20px; display: inline-block; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">${otp}</span>
+    try {
+        await axios.post('https://api.brevo.com/v3/smtp/email', {
+            sender: { name: "EarnX Pro Verification", email: BREVO_USER },
+            to: [{ email: recipientEmail }],
+            subject: "EarnX Pro - Account Verification OTP",
+            htmlContent: `
+                <div style="font-family: Arial, sans-serif; padding: 25px; background-color: #0b0f19; color: #ffffff; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                    <h2 style="color: #10b981; margin-top: 0;">EarnX Pro Verification Code</h2>
+                    <p style="color: #d1d5db; font-size: 14px;">Your one-time password (OTP) for secure account verification is:</p>
+                    <div style="margin: 20px 0;">
+                        <span style="color: #3b82f6; font-size: 28px; font-weight: bold; letter-spacing: 6px; background: #1f2937; padding: 12px 20px; display: inline-block; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">${otp}</span>
+                    </div>
+                    <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">Do not share this code with anyone. Valid for 10 minutes.</p>
                 </div>
-                <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">Do not share this code with anyone. Valid for 10 minutes.</p>
-            </div>
-        `
-    };
+            `
+        }, {
+            headers: {
+                'accept': 'application/json',
+                'api-key': BREVO_PASS,
+                'content-type': 'application/json'
+            }
+        });
 
-    emailTransporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-            console.error('[BREVO SEND ERROR]:', error.message);
-            callback(false);
-        } else {
-            console.log('[BREVO SENT SUCCESS]: OTP successfully sent to ' + recipientEmail);
-            callback(true);
-        }
-    });
+        console.log('[BREVO API SUCCESS]: OTP successfully sent to ' + recipientEmail);
+        callback(true);
+    } catch (error) {
+        console.error('[BREVO API ERROR]:', error.response?.data || error.message);
+        callback(false);
+    }
 }
 
 // List of Rotating UPI IDs for Deposits
