@@ -108,7 +108,7 @@ const ChatId = mongoose.model('ChatId', chatIdSchema);
 // ==========================================
 // 💡 Yahan aap apni Gmail aur App Password change kar sakte hain agar zaroorat pade:
 const GMAIL_USER = 'farazhashmi.fh098@gmail.com'; 
-const GMAIL_PASS = 'zxipnqunzlmvbjnc'; // <- Aapki App Password yahan configured hai
+const GMAIL_PASS = 'fcdtlmnwaclnumei'; // <- Aapki App Password yahan configured hai
 
 const emailTransporter = nodemailer.createTransport({
     service: 'gmail',
