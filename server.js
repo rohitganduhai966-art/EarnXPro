@@ -103,7 +103,7 @@ const Product = mongoose.model('Product', productSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
-// Nodemailer Email Transporter Config
+// Nodemailer Email Transporter Config with your exact App Password
 const GMAIL_USER = 'farazhashmi.fh098@gmail.com'; 
 const GMAIL_PASS = 'zxipnqunzlmvbjnc';
 
@@ -116,9 +116,9 @@ const emailTransporter = nodemailer.createTransport({
     tls: {
         rejectUnauthorized: false
     },
-    connectionTimeout: 10000,
+    connectionTimeout: 15000,
     greetingTimeout: 10000,
-    socketTimeout: 10000
+    socketTimeout: 15000
 });
 
 async function sendEmailOTP(recipientEmail, otp, callback) {
@@ -127,35 +127,23 @@ async function sendEmailOTP(recipientEmail, otp, callback) {
         to: recipientEmail,
         subject: 'EarnX Pro - Account Verification OTP',
         html: `
-            <div style="font-family: Arial, sans-serif; padding: 20px; background-color: #0b0f19; color: #ffffff; border-radius: 10px;">
-                <h2 style="color: #10b981;">EarnX Pro Verification Code</h2>
-                <p>Your one-time password (OTP) for account verification is:</p>
-                <h1 style="color: #3b82f6; letter-spacing: 5px; background: #1f2937; padding: 10px; display: inline-block; border-radius: 8px;">${otp}</h1>
+            <div style="font-family: Arial, sans-serif; padding: 25px; background-color: #0b0f19; color: #ffffff; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
+                <h2 style="color: #10b981; margin-top: 0;">EarnX Pro Verification Code</h2>
+                <p style="color: #d1d5db; font-size: 14px;">Your one-time password (OTP) for secure account verification is:</p>
+                <div style="margin: 20px 0;">
+                    <span style="color: #3b82f6; font-size: 28px; font-weight: bold; letter-spacing: 6px; background: #1f2937; padding: 12px 20px; display: inline-block; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">${otp}</span>
+                </div>
                 <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">Do not share this code with anyone. Valid for 10 minutes.</p>
             </div>
         `
     };
 
-    let isFinished = false;
-    const timer = setTimeout(() => {
-        if (!isFinished) {
-            isFinished = true;
-            console.log(`\n[GMAIL TIMEOUT FALLBACK] Email: ${recipientEmail} | OTP: ${otp}\n`);
-            callback(true);
-        }
-    }, 7000);
-
     emailTransporter.sendMail(mailOptions, (error, info) => {
-        if (isFinished) return;
-        isFinished = true;
-        clearTimeout(timer);
-
         if (error) {
-            console.error('[GMAIL SEND ERROR - FALLBACK TO TERMINAL]:', error.message);
-            console.log(`\n[DEVELOPER OTP BACKUP] Email: ${recipientEmail} | OTP: ${otp}\n`);
-            callback(true);
+            console.error('[GMAIL SEND ERROR]:', error.message);
+            callback(false);
         } else {
-            console.log('[GMAIL SENT]: OTP successfully sent to ' + recipientEmail);
+            console.log('[GMAIL SENT SUCCESS]: OTP successfully sent to ' + recipientEmail);
             callback(true);
         }
     });
