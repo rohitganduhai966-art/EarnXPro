@@ -6,7 +6,6 @@ const path = require('path');
 const multer = require('multer');
 const mongoose = require('mongoose');
 const axios = require('axios');
-const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = 7700;
@@ -25,7 +24,6 @@ mongoose.connect(MONGO_URI)
 const userSchema = new mongoose.Schema({
     uid: { type: String, unique: true },
     username: { type: String, required: true, lowercase: true, trim: true },
-    authType: { type: String, default: 'telegram' }, // 'telegram' or 'email'
     name: { type: String, default: '' },
     password: { type: String, required: true },
     rechargeBalance: { type: Number, default: 0 },
@@ -89,7 +87,6 @@ const otpSchema = new mongoose.Schema({
     name: String,
     password: String,
     ref: String,
-    authType: String,
     type: String
 });
 
@@ -102,43 +99,6 @@ const User = mongoose.model('User', userSchema);
 const Product = mongoose.model('Product', productSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
-
-// ==========================================
-// ⚙️ RESEND EMAIL API CONFIGURATION
-// ==========================================
-// 🔽 LINE 98: Yahan apni Resend API Key paste karein (jaise 're_123456789...')
-const RESEND_API_KEY = 're_DzbYEwhR_Ka7gfDtrcStzeKpaBUJUCU2U'; 
-
-async function sendEmailOTP(recipientEmail, otp, callback) {
-    try {
-        await axios.post('https://api.resend.com/emails', {
-            from: 'EarnX Pro <onboarding@resend.dev>',
-            to: [recipientEmail],
-            subject: 'EarnX Pro - Account Verification OTP',
-            html: `
-                <div style="font-family: Arial, sans-serif; padding: 25px; background-color: #0b0f19; color: #ffffff; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
-                    <h2 style="color: #10b981; margin-top: 0;">EarnX Pro Verification Code</h2>
-                    <p style="color: #d1d5db; font-size: 14px;">Your one-time password (OTP) for secure account verification is:</p>
-                    <div style="margin: 20px 0;">
-                        <span style="color: #3b82f6; font-size: 28px; font-weight: bold; letter-spacing: 6px; background: #1f2937; padding: 12px 20px; display: inline-block; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3);">${otp}</span>
-                    </div>
-                    <p style="color: #9ca3af; font-size: 12px; margin-top: 20px;">Do not share this code with anyone. Valid for 10 minutes.</p>
-                </div>
-            `
-        }, {
-            headers: {
-                'Authorization': `Bearer ${RESEND_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        console.log('[RESEND API SUCCESS]: OTP successfully sent to ' + recipientEmail);
-        callback(true);
-    } catch (error) {
-        console.error('[RESEND API ERROR]:', error.response?.data || error.message);
-        callback(false);
-    }
-}
 
 // List of Rotating UPI IDs for Deposits
 const ROTATING_UPI_IDS = [
@@ -168,7 +128,6 @@ async function ensureDefaultAdmin() {
             await User.create({
                 uid: 'UID10001',
                 username: '@7071088675',
-                authType: 'telegram',
                 name: 'Admin',
                 password: 'Faraz78678678690786',
                 rechargeBalance: 0,
@@ -468,7 +427,7 @@ function renderLayout(title, content, user, req) {
                 border: 1px solid rgba(56, 189, 248, 0.15);
                 color: #fff;
                 display: flex;
-                justify-between;
+                justify-content: space-between;
                 align-items: center;
                 padding: 15px 18px;
                 border-radius: 14px;
@@ -594,7 +553,7 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// Login Page with Remember Me Feature & Dual Support
+// Login Page with Remember Me Feature
 app.get('/login', (req, res) => {
     req.session.modalShown = false;
     const formHtml = `
@@ -616,8 +575,8 @@ app.get('/login', (req, res) => {
             <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Welcome Back</h2>
             <form action="/login" method="POST" id="loginForm" class="space-y-4">
                 <div>
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram (@username) or Email Address</label>
-                    <input type="text" id="loginUsername" name="username" placeholder="@username or email@gmail.com" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Username (e.g. @yourusername)</label>
+                    <input type="text" id="loginUsername" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 mb-1">Password</label>
@@ -669,9 +628,7 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
     let { username, password } = req.body;
     username = username.trim().toLowerCase();
-    if (!username.includes('@') && !username.includes('.')) {
-        username = '@' + username;
-    }
+    if (!username.startsWith('@')) username = '@' + username;
     
     const user = await User.findOne({ username, password });
     if (user) {
@@ -682,7 +639,7 @@ app.post('/login', async (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup with Dual Support (Email or Telegram)
+// Signup
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -704,23 +661,23 @@ app.get('/signup', (req, res) => {
             </div>
             <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Create Secure Account</h2>
             
-            <div class="flex justify-center gap-2 mb-4">
-                <button type="button" onclick="switchTab('email')" id="emailTabBtn" class="flex-1 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white shadow">📧 Register with Email</button>
-                <button type="button" onclick="switchTab('telegram')" id="tgTabBtn" class="flex-1 py-2 text-xs font-bold rounded-xl bg-gray-800 text-gray-300 shadow">✈️ Register with Telegram</button>
+            <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-300 mb-4 leading-relaxed">
+                <p class="font-bold mb-1">📢 Important Telegram Bot Instructions:</p>
+                <p>1. Pehle yahan click karke bot ko start karein: <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> (aur /start bhejyen).</p>
+                <p class="mt-1">2. Fir apna wahi Telegram username niche enter karein.</p>
             </div>
 
             <form action="/send-signup-otp" method="POST" class="space-y-4">
                 <input type="hidden" name="ref" value="${refCode}">
-                <input type="hidden" name="authType" id="authTypeInput" value="email">
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 mb-1">Your Name</label>
                     <input type="text" name="name" placeholder="Enter Full Name" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-gray-400 mb-1" id="usernameLabel">Gmail / Email Address</label>
-                    <input type="text" name="username" id="usernameInput" placeholder="yourname@gmail.com" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
-                    <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed" id="usernameHint">
-                        📧 Verification OTP will be sent directly to your Gmail / Email Inbox.
+                    <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Username</label>
+                    <input type="text" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
+                        ⚠️ Please enter your Telegram username. The verification OTP will be sent directly to your Telegram chat via our Bot.
                     </p>
                 </div>
                 <div>
@@ -728,90 +685,54 @@ app.get('/signup', (req, res) => {
                     <input type="password" name="password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 ${refCode ? `<p class="text-xs text-yellow-400 bg-yellow-500/10 p-2 rounded-lg border border-yellow-500/20">Referral Code Applied: ${refCode}</p>` : ''}
-                <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Send OTP & Register</button>
+                <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Send Telegram OTP & Register</button>
             </form>
             <p class="text-center text-xs text-gray-400 mt-4">Already have an account? <a href="/login" class="text-green-400 font-bold hover:underline">Login</a></p>
         </div>
-
-        <script>
-            function switchTab(type) {
-                const authInput = document.getElementById('authTypeInput');
-                const label = document.getElementById('usernameLabel');
-                const input = document.getElementById('usernameInput');
-                const hint = document.getElementById('usernameHint');
-                const emailBtn = document.getElementById('emailTabBtn');
-                const tgBtn = document.getElementById('tgTabBtn');
-
-                if (type === 'email') {
-                    authInput.value = 'email';
-                    label.innerText = 'Gmail / Email Address';
-                    input.placeholder = 'yourname@gmail.com';
-                    hint.innerHTML = '📧 Verification OTP will be sent directly to your Gmail / Email Inbox.';
-                    emailBtn.className = 'flex-1 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white shadow';
-                    tgBtn.className = 'flex-1 py-2 text-xs font-bold rounded-xl bg-gray-800 text-gray-300 shadow';
-                } else {
-                    authInput.value = 'telegram';
-                    label.innerText = 'Telegram Username';
-                    input.placeholder = '@yourusername';
-                    hint.innerHTML = '⚠️ Start bot <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="underline font-bold text-white">@EarnXPro_09bot</a> first to receive Telegram OTP.';
-                    tgBtn.className = 'flex-1 py-2 text-xs font-bold rounded-xl bg-emerald-600 text-white shadow';
-                    emailBtn.className = 'flex-1 py-2 text-xs font-bold rounded-xl bg-gray-800 text-gray-300 shadow';
-                }
-            }
-        </script>
     `;
     res.send(renderLayout('Sign Up', formHtml, req.session.user, req));
 });
 
-app.get('/send-signup-otp', (req, res) => {
-    res.redirect('/signup');
-});
-
 app.post('/send-signup-otp', async (req, res) => {
-    let { username, name, password, ref, authType } = req.body;
+    let { username, name, password, ref } = req.body;
     username = username.trim().toLowerCase();
-    if (authType === 'telegram' && !username.startsWith('@')) username = '@' + username;
+    if (!username.startsWith('@')) username = '@' + username;
 
     const existingUser = await User.findOne({ username });
     if (existingUser) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Account (${username}) already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     await Otp.findOneAndUpdate(
         { username },
-        { otp, name, password, ref, authType, type: 'signup' },
+        { otp, name, password, ref, type: 'signup' },
         { upsert: true, new: true }
     );
 
-    const handleOtpResult = (success) => {
+    sendRealOTP(username, otp, (success) => {
         if (!success) {
-            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Could not send OTP via ${authType}! Please check your credentials and try again.</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen aur fir try karein.</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
         }
         const verifyHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10 text-center">
-                <h2 class="text-2xl font-black text-green-400 mb-3">Verify OTP Code</h2>
-                <p class="text-xs text-gray-400 mb-6">Verification code sent via <b>${authType.toUpperCase()}</b> to: <b>${username}</b></p>
+                <h2 class="text-2xl font-black text-green-400 mb-3">Verify Telegram OTP</h2>
+                <p class="text-xs text-gray-400 mb-6">Secure 6-digit verification code sent to your Telegram username: <b>${username}</b></p>
                 <form action="/verify-signup-otp" method="POST" class="space-y-4">
                     <input type="hidden" name="username" value="${username}">
                     <input type="text" name="otp" required maxlength="6" placeholder="Enter 6-digit OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-green-500">
-                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 text-white font-bold p-3 rounded-xl shadow-lg transition-all">Confirm & Register</button>
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-blue-500/20 transition-all">Confirm & Register</button>
                 </form>
             </div>
         `;
         res.send(renderLayout('Verify OTP', verifyHtml, null, req));
-    };
-
-    if (authType === 'email') {
-        sendEmailOTP(username, otp, handleOtpResult);
-    } else {
-        sendRealOTP(username, otp, handleOtpResult);
-    }
+    });
 });
 
 app.post('/verify-signup-otp', async (req, res) => {
     let { username, otp } = req.body;
     username = username.trim().toLowerCase();
+    if (!username.startsWith('@')) username = '@' + username;
 
     const record = await Otp.findOne({ username });
 
@@ -831,7 +752,6 @@ app.post('/verify-signup-otp', async (req, res) => {
         await User.create({
             uid: uniqueUid,
             username,
-            authType: record.authType || 'email',
             name: record.name || '',
             password: record.password,
             rechargeBalance: 0,
@@ -859,11 +779,17 @@ app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
             <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Reset Password</h2>
+            
+            <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300 mb-4 leading-relaxed">
+                <p class="font-bold mb-1">📢 Instructions:</p>
+                <p>Pehle <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-white underline font-bold">@EarnXPro_09bot</a> par click karke /start bhejyen, fir apna registered username niche dalein.</p>
+            </div>
+
             <form action="/send-forgot-otp" method="POST" class="space-y-4">
                 <div>
-                    <input type="text" name="username" placeholder="@username or email@gmail.com" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
+                    <input type="text" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
                 </div>
-                <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 text-white font-bold p-3 rounded-xl shadow-lg transition-all">Send Reset OTP</button>
+                <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-yellow-500/20 transition-all">Send Reset OTP to Telegram</button>
             </form>
             <a href="/login" class="block text-center text-xs text-gray-400 mt-4 hover:text-white underline">Back to Login</a>
         </div>
@@ -874,11 +800,11 @@ app.get('/forgot-password', (req, res) => {
 app.post('/send-forgot-otp', async (req, res) => {
     let { username } = req.body;
     username = username.trim().toLowerCase();
-    if (!username.includes('@') && !username.includes('.')) username = '@' + username;
+    if (!username.startsWith('@')) username = '@' + username;
 
     const user = await User.findOne({ username });
     if (!user) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Account not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
 
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -888,34 +814,29 @@ app.post('/send-forgot-otp', async (req, res) => {
         { upsert: true, new: true }
     );
 
-    const handleResetOtp = (success) => {
+    sendRealOTP(username, otp, (success) => {
         if (!success) {
-            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Could not send OTP!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Chat ID nahi mili! Pehle <a href="https://telegram.me/EarnXPro_09bot" target="_blank" class="text-yellow-400 underline">@EarnXPro_09bot</a> par jakar /start bhejyen.</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
         }
         const resetHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
                 <h2 class="text-2xl font-black text-center text-yellow-400 mb-6">Set New Password</h2>
                 <form action="/verify-and-reset" method="POST" class="space-y-4">
                     <input type="hidden" name="username" value="${username}">
-                    <input type="text" name="otp" required maxlength="6" placeholder="Enter 6-digit OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-yellow-500">
+                    <input type="text" name="otp" required maxlength="6" placeholder="Enter Telegram OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-yellow-500">
                     <input type="password" name="newPassword" placeholder="New Password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-yellow-500">
-                    <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 text-white font-bold p-3 rounded-xl shadow-lg transition-all">Update Password</button>
+                    <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Update Password</button>
                 </form>
             </div>
         `;
         res.send(renderLayout('Reset Password', resetHtml, null, req));
-    };
-
-    if (user.authType === 'email' || username.includes('@gmail.com')) {
-        sendEmailOTP(username, otp, handleResetOtp);
-    } else {
-        sendRealOTP(username, otp, handleResetOtp);
-    }
+    });
 });
 
 app.post('/verify-and-reset', async (req, res) => {
     let { username, otp, newPassword } = req.body;
     username = username.trim().toLowerCase();
+    if (!username.startsWith('@')) username = '@' + username;
 
     const record = await Otp.findOne({ username });
 
@@ -967,7 +888,7 @@ app.get('/home', async (req, res) => {
                 <div>
                     <h3 class="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">User Profile Verified</h3>
                     <div class="text-lg font-black text-white mt-1">UID: <span class="text-emerald-400">${currentUser.uid}</span></div>
-                    <p class="text-xs text-gray-300 mt-0.5">Name: ${currentUser.name || 'N/A'} | Account: ${currentUser.username}</p>
+                    <p class="text-xs text-gray-300 mt-0.5">Name: ${currentUser.name || 'N/A'} | Telegram: ${currentUser.username}</p>
                 </div>
                 <div class="text-right flex-shrink-0">
                     <span class="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1.5 rounded-xl font-extrabold border border-emerald-500/30 whitespace-nowrap shadow">Active Account</span>
@@ -1307,7 +1228,7 @@ app.get('/account', async (req, res) => {
                     <span>UID: <span class="text-emerald-400">${currentUser.uid}</span></span>
                     <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/30">Verified</span>
                 </div>
-                <div class="account-status text-xs text-gray-300 mt-2">Name: ${currentUser.name || 'N/A'} &bull; Account: ${currentUser.username}</div>
+                <div class="account-status text-xs text-gray-300 mt-2">Name: ${currentUser.name || 'N/A'} &bull; Telegram: ${currentUser.username}</div>
             </div>
 
             <div class="balance-cards-grid">
@@ -1607,7 +1528,7 @@ app.get('/withdrawal', async (req, res) => {
                 <input type="text" name="accName" placeholder="Account Holder Name" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                 <input type="text" name="accNo" placeholder="Enter Bank Account Number" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                 <input type="text" name="ifsc" placeholder="Enter IFSC Code" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                <input type="text" name="phone" placeholder="Account Identifier" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                <input type="text" name="phone" placeholder="Telegram Username" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
             </div>
         `;
     }
@@ -1795,7 +1716,7 @@ app.get('/admin', async (req, res) => {
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
             <div class="flex justify-between items-center mb-2">
                 <div>
-                    <p class="font-bold text-yellow-400">UID: ${u.uid} | Name: ${u.name || 'N/A'} | Account: ${u.username}</p>
+                    <p class="font-bold text-yellow-400">UID: ${u.uid} | Name: ${u.name || 'N/A'} | Telegram: ${u.username}</p>
                     <p class="text-emerald-400 text-xs mt-0.5">Recharge Bal: ₹${(u.rechargeBalance || 0).toFixed(2)} | Withdraw Bal: ₹${(u.withdrawBalance || 0).toFixed(2)}</p>
                 </div>
                 <form action="/admin/add-balance" method="POST" class="flex space-x-1">
