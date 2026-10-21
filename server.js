@@ -427,7 +427,7 @@ function renderLayout(title, content, user, req) {
                 border: 1px solid rgba(56, 189, 248, 0.15);
                 color: #fff;
                 display: flex;
-                justify-between: space-between;
+                justify-content: space-between;
                 align-items: center;
                 padding: 15px 18px;
                 border-radius: 14px;
@@ -553,7 +553,7 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// Login
+// Login Page with Remember Me Feature
 app.get('/login', (req, res) => {
     req.session.modalShown = false;
     const formHtml = `
@@ -573,22 +573,54 @@ app.get('/login', (req, res) => {
                 </div>
             </div>
             <h2 class="text-2xl font-black text-center text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-500 mb-6">Welcome Back</h2>
-            <form action="/login" method="POST" class="space-y-4">
+            <form action="/login" method="POST" id="loginForm" class="space-y-4">
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Username (e.g. @yourusername)</label>
-                    <input type="text" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <input type="text" id="loginUsername" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 mb-1">Password</label>
-                    <input type="password" name="password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <input type="password" id="loginPassword" name="password" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                </div>
+                <div class="flex items-center justify-between text-xs text-gray-400">
+                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" id="rememberMe" class="w-4 h-4 rounded bg-gray-800 border-gray-700 text-green-500 focus:ring-0 focus:ring-offset-0">
+                        <span>Remember Me</span>
+                    </label>
+                    <a href="/forgot-password" class="text-yellow-400 hover:underline">Forgot Password?</a>
                 </div>
                 <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all">Secure Login</button>
             </form>
-            <div class="flex justify-between items-center text-xs mt-5 pt-4 border-t border-gray-800">
-                <a href="/forgot-password" class="text-yellow-400 hover:underline">Forgot Password?</a>
+            <div class="flex justify-center items-center text-xs mt-5 pt-4 border-t border-gray-800">
                 <a href="/signup" class="text-green-400 font-bold hover:underline">Create Account</a>
             </div>
         </div>
+
+        <script>
+            document.addEventListener("DOMContentLoaded", () => {
+                const savedUsername = localStorage.getItem("earnx_username");
+                const savedPassword = localStorage.getItem("earnx_password");
+                const rememberMeInput = document.getElementById("rememberMe");
+                const usernameInput = document.getElementById("loginUsername");
+                const passwordInput = document.getElementById("loginPassword");
+
+                if (savedUsername && savedPassword) {
+                    usernameInput.value = savedUsername;
+                    passwordInput.value = savedPassword;
+                    rememberMeInput.checked = true;
+                }
+
+                document.getElementById("loginForm").addEventListener("submit", () => {
+                    if (rememberMeInput.checked) {
+                        localStorage.setItem("earnx_username", usernameInput.value);
+                        localStorage.setItem("earnx_password", passwordInput.value);
+                    } else {
+                        localStorage.removeItem("earnx_username");
+                        localStorage.removeItem("earnx_password");
+                    }
+                });
+            });
+        </script>
     `;
     res.send(renderLayout('Login', formHtml, req.session.user, req));
 });
@@ -1044,7 +1076,7 @@ app.post('/api/notifications/mark-read', async (req, res) => {
     }
 });
 
-// Dedicated Sub-Pages for Account Menu Items
+// Account Menu Sub-pages
 app.get('/account/investments', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1364,13 +1396,13 @@ app.get('/deposit', async (req, res) => {
                 let targetUrl = '';
 
                 if (app === 'gpay') {
-                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end;';
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (app === 'phonepe') {
-                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.phonepe.app;end;';
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (app === 'paytm') {
                     targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (app === 'mobikwik') {
-                    targetUrl = 'intent://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR#Intent;scheme=upi;package=com.mobikwik_new;end;';
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 }
 
                 window.location.href = targetUrl;
@@ -1672,7 +1704,7 @@ app.post('/withdrawal', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// ==================== ADMIN PANEL ====================
+// Admin Panel
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
