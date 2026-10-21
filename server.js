@@ -103,12 +103,9 @@ const Product = mongoose.model('Product', productSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
-// ==========================================
-// ⚙️ GMAIL SMTP CONFIGURATION (UPDATED)
-// ==========================================
-// 💡 Yahan aap apni Gmail aur App Password change kar sakte hain agar zaroorat pade:
+// Nodemailer Email Transporter Config with your updated App Password
 const GMAIL_USER = 'farazhashmi.fh098@gmail.com'; 
-const GMAIL_PASS = 'fcdtlmnwaclnumei'; // <- Aapki App Password yahan configured hai
+const GMAIL_PASS = 'fcdtlmnwaclnumei'; // Spaces removed for proper authentication
 
 const emailTransporter = nodemailer.createTransport({
     service: 'gmail',
