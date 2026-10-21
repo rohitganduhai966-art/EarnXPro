@@ -764,6 +764,11 @@ app.get('/signup', (req, res) => {
     res.send(renderLayout('Sign Up', formHtml, req.session.user, req));
 });
 
+// GET route for /send-signup-otp to handle direct visits/refreshes safely
+app.get('/send-signup-otp', (req, res) => {
+    res.redirect('/signup');
+});
+
 app.post('/send-signup-otp', async (req, res) => {
     let { username, name, password, ref, authType } = req.body;
     username = username.trim().toLowerCase();
