@@ -104,20 +104,18 @@ const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
 // ==========================================
-// ⚙️ BREVO HTTP API CONFIGURATION
+// ⚙️ RESEND EMAIL API CONFIGURATION
 // ==========================================
-const BREVO_USER = 'fatimaaiza317@gmail.com'; //[span_1](start_span)[span_1](end_span)[span_2](start_span)[span_2](end_span)
-
-// 🔽 Yahan apni Brevo API / SMTP Key paste karo 🔽
-const BREVO_PASS = 'bskFILWknjyugrN'; 
+// 🔽 LINE 98: Yahan apni Resend API Key paste karein (jaise 're_123456789...')
+const RESEND_API_KEY = 're_DzbYEwhR_Ka7gfDtrcStzeKpaBUJUCU2U'; 
 
 async function sendEmailOTP(recipientEmail, otp, callback) {
     try {
-        await axios.post('https://api.brevo.com/v3/smtp/email', {
-            sender: { name: "EarnX Pro Verification", email: BREVO_USER },
-            to: [{ email: recipientEmail }],
-            subject: "EarnX Pro - Account Verification OTP",
-            htmlContent: `
+        await axios.post('https://api.resend.com/emails', {
+            from: 'EarnX Pro <onboarding@resend.dev>',
+            to: [recipientEmail],
+            subject: 'EarnX Pro - Account Verification OTP',
+            html: `
                 <div style="font-family: Arial, sans-serif; padding: 25px; background-color: #0b0f19; color: #ffffff; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.2);">
                     <h2 style="color: #10b981; margin-top: 0;">EarnX Pro Verification Code</h2>
                     <p style="color: #d1d5db; font-size: 14px;">Your one-time password (OTP) for secure account verification is:</p>
@@ -129,16 +127,15 @@ async function sendEmailOTP(recipientEmail, otp, callback) {
             `
         }, {
             headers: {
-                'accept': 'application/json',
-                'api-key': BREVO_PASS,
-                'content-type': 'application/json'
+                'Authorization': `Bearer ${RESEND_API_KEY}`,
+                'Content-Type': 'application/json'
             }
         });
 
-        console.log('[BREVO API SUCCESS]: OTP successfully sent to ' + recipientEmail);
+        console.log('[RESEND API SUCCESS]: OTP successfully sent to ' + recipientEmail);
         callback(true);
     } catch (error) {
-        console.error('[BREVO API ERROR]:', error.response?.data || error.message);
+        console.error('[RESEND API ERROR]:', error.response?.data || error.message);
         callback(false);
     }
 }
