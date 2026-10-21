@@ -103,7 +103,7 @@ const Product = mongoose.model('Product', productSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
-// Nodemailer Email Transporter Config (Configured with your Gmail & App Password)
+// Nodemailer Email Transporter Config (Configured with connection timeouts to prevent hanging)
 const GMAIL_USER = 'farazhashmi.fh098@gmail.com'; 
 const GMAIL_PASS = 'zxipnqunzlmvbjnc';
 
@@ -112,7 +112,13 @@ const emailTransporter = nodemailer.createTransport({
     auth: {
         user: GMAIL_USER,
         pass: GMAIL_PASS
-    }
+    },
+    tls: {
+        rejectUnauthorized: false
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000
 });
 
 async function sendEmailOTP(recipientEmail, otp, callback) {
