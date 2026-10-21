@@ -103,7 +103,7 @@ const Product = mongoose.model('Product', productSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
-// Nodemailer Email Transporter Config (Configured with connection timeouts to prevent hanging)
+// Nodemailer Email Transporter Config
 const GMAIL_USER = 'farazhashmi.fh098@gmail.com'; 
 const GMAIL_PASS = 'zxipnqunzlmvbjnc';
 
@@ -122,10 +122,6 @@ const emailTransporter = nodemailer.createTransport({
 });
 
 async function sendEmailOTP(recipientEmail, otp, callback) {
-    console.log(`\n========================================`);
-    console.log(`[DEVELOPER OTP BACKUP] Email: ${recipientEmail} | OTP: ${otp}`);
-    console.log(`========================================\n`);
-
     const mailOptions = {
         from: `"EarnX Pro Verification" <${GMAIL_USER}>`,
         to: recipientEmail,
@@ -140,10 +136,24 @@ async function sendEmailOTP(recipientEmail, otp, callback) {
         `
     };
 
+    let isFinished = false;
+    const timer = setTimeout(() => {
+        if (!isFinished) {
+            isFinished = true;
+            console.log(`\n[GMAIL TIMEOUT FALLBACK] Email: ${recipientEmail} | OTP: ${otp}\n`);
+            callback(true);
+        }
+    }, 7000);
+
     emailTransporter.sendMail(mailOptions, (error, info) => {
+        if (isFinished) return;
+        isFinished = true;
+        clearTimeout(timer);
+
         if (error) {
-            console.error('[GMAIL SEND ERROR - BYPASSING TO TERMINAL]:', error.message);
-            callback(true); // Bypassing to ensure user flow never gets stuck
+            console.error('[GMAIL SEND ERROR - FALLBACK TO TERMINAL]:', error.message);
+            console.log(`\n[DEVELOPER OTP BACKUP] Email: ${recipientEmail} | OTP: ${otp}\n`);
+            callback(true);
         } else {
             console.log('[GMAIL SENT]: OTP successfully sent to ' + recipientEmail);
             callback(true);
@@ -774,7 +784,6 @@ app.get('/signup', (req, res) => {
     res.send(renderLayout('Sign Up', formHtml, req.session.user, req));
 });
 
-// GET route for /send-signup-otp to handle direct visits/refreshes safely
 app.get('/send-signup-otp', (req, res) => {
     res.redirect('/signup');
 });
@@ -798,12 +807,12 @@ app.post('/send-signup-otp', async (req, res) => {
 
     const handleOtpResult = (success) => {
         if (!success) {
-            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Could not send OTP! Please check your credentials and try again.</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+            return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Could not send OTP via ${authType}! Please check your credentials and try again.</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
         }
         const verifyHtml = `
             <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10 text-center">
                 <h2 class="text-2xl font-black text-green-400 mb-3">Verify OTP Code</h2>
-                <p class="text-xs text-gray-400 mb-6">Verification code sent to: <b>${username}</b></p>
+                <p class="text-xs text-gray-400 mb-6">Verification code sent via <b>${authType.toUpperCase()}</b> to: <b>${username}</b></p>
                 <form action="/verify-signup-otp" method="POST" class="space-y-4">
                     <input type="hidden" name="username" value="${username}">
                     <input type="text" name="otp" required maxlength="6" placeholder="Enter 6-digit OTP" class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white tracking-widest text-center text-lg focus:outline-none focus:border-green-500">
