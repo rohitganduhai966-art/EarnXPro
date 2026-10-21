@@ -103,15 +103,21 @@ const Product = mongoose.model('Product', productSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
-// Nodemailer Email Transporter Config with your updated App Password
-const GMAIL_USER = 'farazhashmi.fh098@gmail.com'; 
-const GMAIL_PASS = 'fcdtlmnwaclnumei'; // Spaces removed for proper authentication
+// ==========================================
+// ⚙️ BREVO SMTP CONFIGURATION
+// ==========================================
+const BREVO_USER = 'fatimaaiza317@gmail.com'; // Aapka Brevo Registered Email
+
+// 🔽 LINE 98: APNI BREVO SMTP KEY PASTE KARO 🔽
+const BREVO_PASS = 'bskFILWknjyugrN'; 
 
 const emailTransporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp-relay.brevo.com',
+    port: 587,
+    secure: false, // TLS 587
     auth: {
-        user: GMAIL_USER,
-        pass: GMAIL_PASS
+        user: BREVO_USER,
+        pass: BREVO_PASS
     },
     tls: {
         rejectUnauthorized: false
@@ -123,7 +129,7 @@ const emailTransporter = nodemailer.createTransport({
 
 async function sendEmailOTP(recipientEmail, otp, callback) {
     const mailOptions = {
-        from: `"EarnX Pro Verification" <${GMAIL_USER}>`,
+        from: `"EarnX Pro Verification" <${BREVO_USER}>`,
         to: recipientEmail,
         subject: 'EarnX Pro - Account Verification OTP',
         html: `
@@ -140,10 +146,10 @@ async function sendEmailOTP(recipientEmail, otp, callback) {
 
     emailTransporter.sendMail(mailOptions, (error, info) => {
         if (error) {
-            console.error('[GMAIL SEND ERROR]:', error.message);
+            console.error('[BREVO SEND ERROR]:', error.message);
             callback(false);
         } else {
-            console.log('[GMAIL SENT SUCCESS]: OTP successfully sent to ' + recipientEmail);
+            console.log('[BREVO SENT SUCCESS]: OTP successfully sent to ' + recipientEmail);
             callback(true);
         }
     });
@@ -477,7 +483,7 @@ function renderLayout(title, content, user, req) {
                 border: 1px solid rgba(56, 189, 248, 0.15);
                 color: #fff;
                 display: flex;
-                justify-content: space-between;
+                justify-between;
                 align-items: center;
                 padding: 15px 18px;
                 border-radius: 14px;
