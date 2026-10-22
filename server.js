@@ -1127,29 +1127,44 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE
+// INVESTMENT ROUTE (Updated to include Special & Extra Bonuses automatically into return amount and wallet credit)
 app.post('/invest', async (req, res) => {
     if (!req.session || !req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
     let user = await User.findOne({ username: req.session.user.username });
 
     let pPrice = 0;
-    let pReturn = 0;
+    let baseReturn = 0;
     let pName = "";
 
     let product = await Product.findOne({ _id: productId }, { price: 1, returnAmount: 1, name: 1 }).lean();
     if (product) {
         pPrice = product.price;
-        pReturn = product.returnAmount;
+        baseReturn = product.returnAmount;
         pName = product.name;
     } else {
         pPrice = parseFloat(price);
-        pReturn = parseFloat(returnAmount);
+        baseReturn = parseFloat(returnAmount);
         pName = productName || 'Automatic Dynamic Order';
     }
 
     if (!user || !pPrice) {
         return res.redirect('/invest');
+    }
+
+    // Correct bonus calculation matching frontend display rules
+    let calculatedReturn = baseReturn;
+    if (pPrice >= 150 && pPrice < 10000) {
+        // 4.2% base profit + 1% special bonus = 5.2% total return
+        const profit = pPrice * 0.052;
+        calculatedReturn = Math.round(pPrice + profit);
+    } else if (pPrice >= 10000) {
+        // 4.2% base profit + 1% special bonus + 0.8% extra bonus = 6.0% total return
+        const profit = pPrice * 0.06;
+        calculatedReturn = Math.round(pPrice + profit);
+    } else {
+        const profit = pPrice * 0.042;
+        calculatedReturn = Math.round(pPrice + profit);
     }
 
     const existingInvestment = (user.investments || []).some(inv => inv.productId === productId);
@@ -1175,7 +1190,7 @@ app.post('/invest', async (req, res) => {
     if ((user.walletBalance || 0) >= pPrice) {
         matchingDeposit.used = true;
 
-        user.walletBalance = user.walletBalance - pPrice + pReturn;
+        user.walletBalance = user.walletBalance - pPrice + calculatedReturn;
         
         if (!user.investments) user.investments = [];
 
@@ -1183,7 +1198,7 @@ app.post('/invest', async (req, res) => {
             productName: pName,
             productId: productId,
             amount: pPrice,
-            returnAmount: pReturn,
+            returnAmount: calculatedReturn,
             status: 'Completed',
             date: getISTDateTime()
         });
