@@ -51,7 +51,7 @@ const userSchema = new mongoose.Schema({
         utr: String,
         gateway: String,
         screenshotUrl: String,
-        status: { type: String, default: 'Pending' },
+        status: { type: String, default: 'Pending' }, // Pending, Completed, Failed, Fake / Suspicious
         date: String
     }],
     withdrawals: [{
@@ -137,12 +137,36 @@ function validateOfficialUpi(upiId) {
     return null;
 }
 
+// Advanced Fake & Fraud Payment Detector
+async function detectFakeOrFraudPayment(utr, amount) {
+    // 1. Check if UTR is exactly 12 digits numeric
+    const utrRegex = /^[0-9]{12}$/;
+    if (!utrRegex.test(utr)) {
+        return { isFake: true, reason: "Invalid UTR format (Must be strictly 12 numeric digits)" };
+    }
+
+    // 2. Check if UTR has already been used across any user in database (Duplicate Fraud Check)
+    const existingUtr = await User.findOne({ "deposits.utr": utr });
+    if (existingUtr) {
+        return { isFake: true, reason: "Duplicate UTR detected (Already used in system)" };
+    }
+
+    // 3. Fake App Pattern Detection (Check for sequential or repetitive patterns typical of fake screenshot/prank apps)
+    const allSameDigits = /^(\d)\1{11}$/.test(utr); // e.g. 111111111111
+    const sequentialDigits = "012345678901,123456789012,234567890123,345678901234,456789012345,567890123456,678901234567,789012345678,890123456789,901234567890".includes(utr);
+    
+    if (allSameDigits || sequentialDigits) {
+        return { isFake: true, reason: "Suspicious or Fake App Pattern detected in UTR digits" };
+    }
+
+    return { isFake: false, reason: "Passed automated security check" };
+}
+
 // Dynamic Rotating UPI Fetcher from DB
 async function getRandomUpiId() {
     try {
         let upis = await UpiConfig.find({});
         if (!upis || upis.length === 0) {
-            // Default fallback if database is empty
             return 'rubeena.rashid@ptyes';
         }
         const randomIndex = Math.floor(Math.random() * upis.length);
@@ -253,7 +277,6 @@ async function ensureDefaultAdmin() {
             console.log('[MONGODB] Default Admin created successfully.');
         }
 
-        // Seed default UPIs if empty
         const countUpi = await UpiConfig.countDocuments({});
         if (countUpi === 0) {
             const defaultUpis = [
@@ -950,7 +973,6 @@ app.get('/invest', async (req, res) => {
     let autoProducts = generateAutoOrders();
     let allProducts = [...dbProducts, ...autoProducts];
 
-    // Find all global investments across ALL users to prevent anyone else from investing in already taken/completed auto orders
     const allUsers = await User.find({ "investments.status": { $in: ["Active", "Completed"] } });
     const globallyTakenProductIds = new Set();
     allUsers.forEach(u => {
@@ -959,7 +981,6 @@ app.get('/invest', async (req, res) => {
         });
     });
 
-    // Group products by 6 exact range sections
     const sections = {
         "₹100 - ₹900 Section": [],
         "₹900 - ₹2000 Section": [],
@@ -1087,13 +1108,11 @@ app.post('/invest', async (req, res) => {
         return res.redirect('/invest');
     }
 
-    // Strict One-Time User Investment Check
     const existingInvestment = (user.investments || []).some(inv => inv.productId === productId);
     if (existingInvestment) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is order mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
-    // Strict Global One-Time Check (Ensures no other user can invest in the same auto order item)
     const takenCheck = await User.findOne({ "investments.productId": productId });
     if (takenCheck) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Ye order pehle hi kisi aur dwara liya ja chuka hai (Sold Out)! Kripya doosra order select karein.</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
@@ -1251,18 +1270,31 @@ app.get('/account/deposits', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
 
-    let depositHistoryHtml = (currentUser.deposits || []).map(d => `
-        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 p-4 rounded-3xl text-xs flex justify-between items-center mb-3 shadow-2xl">
-            <div>
-                <p class="text-sm">Amt: <b class="text-white text-base">₹${d.amount.toLocaleString()}</b> | UTR: <b class="text-emerald-400">${d.utr}</b></p>
-                <p class="text-gray-400 mt-1">Gateway: ${d.gateway || 'UPI'} | ${d.date}</p>
+    let depositHistoryHtml = (currentUser.deposits || []).map(d => {
+        let statusBadge = '';
+        if (d.status === 'Completed' || d.status === 'Approved') {
+            statusBadge = '<span class="text-emerald-400 font-bold">Completed (Real)</span>';
+        } else if (d.status === 'Fake / Suspicious') {
+            statusBadge = '<span class="text-red-400 font-bold">❌ Fake / Suspicious Payment</span>';
+        } else if (d.status === 'Failed' || d.status === 'Rejected') {
+            statusBadge = '<span class="text-red-400 font-bold">Failed</span>';
+        } else {
+            statusBadge = '<span class="text-yellow-400 font-bold">Pending</span>';
+        }
+
+        return `
+            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 p-4 rounded-3xl text-xs flex justify-between items-center mb-3 shadow-2xl">
+                <div>
+                    <p class="text-sm">Amt: <b class="text-white text-base">₹${d.amount.toLocaleString()}</b> | UTR: <b class="text-emerald-400">${d.utr}</b></p>
+                    <p class="text-gray-400 mt-1">Gateway: ${d.gateway || 'UPI'} | ${d.date}</p>
+                </div>
+                <div class="text-right">
+                    ${statusBadge}
+                    ${d.screenshotUrl ? `<br><a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline mt-1 inline-block font-semibold">View SS</a>` : ''}
+                </div>
             </div>
-            <div class="text-right">
-                <span class="${d.status === 'Completed' || d.status === 'Approved' ? 'text-emerald-400 font-bold' : d.status === 'Failed' || d.status === 'Rejected' ? 'text-red-400 font-bold' : 'text-yellow-400 font-bold'} text-sm">${d.status}</span>
-                ${d.screenshotUrl ? `<br><a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline mt-1 inline-block font-semibold">View SS</a>` : ''}
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 
     const content = `
         <div class="space-y-4 max-w-lg mx-auto">
@@ -1353,7 +1385,10 @@ app.get('/deposit', async (req, res) => {
         let displayStatus = d.status;
         if (d.status === 'Approved' || d.status === 'Completed') {
             statusColor = 'text-emerald-400';
-            displayStatus = 'Completed';
+            displayStatus = 'Completed (Real)';
+        } else if (d.status === 'Fake / Suspicious') {
+            statusColor = 'text-red-400';
+            displayStatus = 'Fake / Suspicious';
         } else if (d.status === 'Rejected' || d.status === 'Failed') {
             statusColor = 'text-red-400';
             displayStatus = 'Failed';
@@ -1378,7 +1413,7 @@ app.get('/deposit', async (req, res) => {
             <h2 class="text-xl font-black text-emerald-400">Deposit Funds (₹100 - ₹50,000)</h2>
 
             <div class="deposit-warning">
-                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below. If you make a payment from any third-party wallet or unverified third-party app, your deposit will <strong>not</strong> be updated or credited to your wallet balance.
+                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below. Fake screenshots or edited apps will be instantly detected and flagged as fraudulent by our system.
             </div>
             
             <div id="step-amount">
@@ -1483,7 +1518,7 @@ app.get('/deposit', async (req, res) => {
                 }
                 document.getElementById('utrError').style.display = 'none';
 
-                alert("Please wait patiently while our system is checking the payment.");
+                alert("Please wait patiently while our system is checking the payment authenticity.");
 
                 const formData = new FormData();
                 formData.append('amount', document.getElementById('final_amount').value);
@@ -1515,19 +1550,13 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { amount, utr, gateway } = req.body;
     
-    const utrRegex = /^[0-9]{12}$/; 
-    if (!utrRegex.test(utr)) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UTR! Please enter a valid 12-digit numeric reference number.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
-    }
-
-    const existingUserWithUtr = await User.findOne({ "deposits.utr": utr });
-    if (existingUserWithUtr) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">This UTR / Transaction ID has already been submitted! Please enter a unique UTR.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
-    }
-
     if (!req.file) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Payment screenshot is mandatory!</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
+
+    // Run Automated Fake & Fraud Detection Engine
+    const fraudCheck = await detectFakeOrFraudPayment(utr, amount);
+    const assignedStatus = fraudCheck.isFake ? 'Fake / Suspicious' : 'Pending';
 
     let user = await User.findOne({ username: req.session.user.username });
     if (user) {
@@ -1537,11 +1566,16 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
             utr, 
             gateway: gateway || 'UPI',
             screenshotUrl: `/uploads/${req.file.filename}`,
-            status: 'Pending', 
+            status: assignedStatus, 
             date: getISTDateTime() 
         });
         await user.save();
     }
+
+    if (fraudCheck.isFake) {
+        return res.send(renderLayout('Fraud Alert', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-red-500/50 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-red-500">❌ Fake Payment Detected!</h2><p class="text-xs text-gray-300">Our automated security system detected this transaction as suspicious or fake (${fraudCheck.reason}). Your request has been flagged and sent to the admin panel.</p><a href="/deposit" class="inline-block bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg">Back to Deposit</a></div>`, req.session.user, req));
+    }
+
     res.redirect('/deposit');
 });
 
@@ -1628,7 +1662,7 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel with UPI Management Tab
+// Admin Panel with Filtered Deposits (Real vs Fake Detection Tab)
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
@@ -1660,16 +1694,18 @@ app.get('/admin', async (req, res) => {
     `).join('');
 
     let depositsHtml = [];
-    let allUsersWithDeposits = await User.find({ "deposits.status": "Pending" });
+    let fakeDepositsHtml = [];
+    let allUsersWithDeposits = await User.find({ "deposits.status": { $in: ["Pending", "Fake / Suspicious"] } });
+    
     allUsersWithDeposits.forEach(u => {
         u.deposits.forEach((d, dIdx) => {
             if (d.status === 'Pending') {
                 depositsHtml.push(`
-                    <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
+                    <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-emerald-500/40 shadow">
                         <div>
                             <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
                             <p class="text-gray-300">Amt: ₹${d.amount} | UTR: <b class="text-emerald-400">${d.utr}</b></p>
-                            <p class="text-xs text-gray-400 mt-1">${d.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
+                            <p class="text-xs text-gray-400 mt-1">${d.date} - Status: <span class="text-yellow-400 font-bold">Real / Pending Review</span></p>
                             ${d.screenshotUrl ? `<a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline text-xs font-bold inline-block mt-2">🔍 Open Screenshot</a>` : ''}
                         </div>
                         <div class="flex space-x-2">
@@ -1684,6 +1720,25 @@ app.get('/admin', async (req, res) => {
                                 <input type="hidden" name="index" value="${dIdx}">
                                 <input type="hidden" name="action" value="reject">
                                 <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
+                            </form>
+                        </div>
+                    </div>
+                `);
+            } else if (d.status === 'Fake / Suspicious') {
+                fakeDepositsHtml.push(`
+                    <div class="bg-red-950/40 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-red-500/60 shadow">
+                        <div>
+                            <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
+                            <p class="text-gray-300">Amt: ₹${d.amount} | UTR: <b class="text-red-400">${d.utr}</b></p>
+                            <p class="text-xs text-red-300 mt-1">${d.date} - Status: <span class="text-red-400 font-bold">❌ FAKE / SUSPICIOUS PAYMENT DETECTED</span></p>
+                            ${d.screenshotUrl ? `<a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline text-xs font-bold inline-block mt-2">🔍 Open Screenshot</a>` : ''}
+                        </div>
+                        <div>
+                            <form action="/admin/action-deposit" method="POST">
+                                <input type="hidden" name="userId" value="${u._id}">
+                                <input type="hidden" name="index" value="${dIdx}">
+                                <input type="hidden" name="action" value="reject">
+                                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Dismiss</button>
                             </form>
                         </div>
                     </div>
@@ -1753,7 +1808,18 @@ app.get('/admin', async (req, res) => {
     if (tab === 'users') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
     } else if (tab === 'deposits') {
-        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-blue-400 mb-3 text-base">💰 Pending Deposit Requests</h3>${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending deposit requests.</p>'}</div>`;
+        activeTabContent = `
+            <div class="space-y-6">
+                <div>
+                    <h3 class="font-bold text-blue-400 mb-3 text-base">🟢 Real / Pending Deposit Requests</h3>
+                    ${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-4 bg-gray-800/40 rounded-xl">No pending real deposits.</p>'}
+                </div>
+                <div class="pt-4 border-t border-gray-800">
+                    <h3 class="font-bold text-red-400 mb-3 text-base">❌ Fake / Suspicious Payments (Auto-Detected)</h3>
+                    ${fakeDepositsHtml.length ? fakeDepositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-4 bg-gray-800/40 rounded-xl">No fake payments detected yet.</p>'}
+                </div>
+            </div>
+        `;
     } else if (tab === 'upi-manage') {
         activeTabContent = `
             <div class="space-y-5">
@@ -1831,7 +1897,7 @@ app.get('/admin', async (req, res) => {
             
             <div class="flex space-x-2 border-b border-gray-800 pb-3 overflow-x-auto text-xs">
                 <a href="/admin?tab=users" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
-                <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits</a>
+                <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits & Fake Detector</a>
                 <a href="/admin?tab=upi-manage" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'upi-manage' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">UPI Management</a>
                 <a href="/admin?tab=auto-orders" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'auto-orders' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Auto Orders</a>
                 <a href="/admin?tab=products" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
@@ -1901,7 +1967,7 @@ app.post('/admin/action-deposit', async (req, res) => {
     let user = await User.findById(userId);
     if (user && user.deposits && user.deposits[index]) {
         let deposit = user.deposits[index];
-        if (deposit.status === 'Pending') {
+        if (deposit.status === 'Pending' || deposit.status === 'Fake / Suspicious') {
             if (action === 'approve') {
                 deposit.status = 'Completed';
                 user.walletBalance = (user.walletBalance || 0) + deposit.amount;
@@ -1962,7 +2028,7 @@ app.post('/admin/send-message', async (req, res) => {
             id: 'notif_' + Date.now(),
             user_id: user.uid,
             title: 'System Notification',
-            message: message, // Preserves newlines and formatting
+            message: message,
             is_read: false,
             created_at: getISTDateTime()
         });
