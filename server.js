@@ -985,7 +985,7 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// INVEST ROUTE (Parallelized for Ultra-Fast Loading)
+// INVEST ROUTE
 app.get('/invest', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
     
@@ -1757,7 +1757,7 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel (Parallelized for Ultra-Fast Loading)
+// Admin Panel (Fixed MongoDB query & fully parallelized)
 app.get('/admin', async (req, res) => {
     if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
@@ -1767,7 +1767,7 @@ app.get('/admin', async (req, res) => {
         Product.find({}).lean(),
         UpiConfig.find({}).lean(),
         User.find({ "deposits.status": { $in: ["Pending", "Fake / Suspicious"] } }).lean(),
-        User.find({ "investments.productId": { $exists: true, $ne: [] } }, { uid: 1, investments: 1 }).lean()
+        User.find({ "investments": { $exists: true, $ne: [] } }, { uid: 1, investments: 1 }).lean()
     ]);
 
     let autoProducts = generateAutoOrders();
