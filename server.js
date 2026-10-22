@@ -183,7 +183,7 @@ async function getRandomUpiId() {
     }
 }
 
-// Helper to generate dynamic automatic rotating orders
+// Helper to generate dynamic automatic rotating orders (Updated Rules)
 function generateAutoOrders() {
     const presetAmounts = [
         100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900,
@@ -202,33 +202,34 @@ function generateAutoOrders() {
         let bonusLabel = "";
         let tabKey = "";
 
+        // Tab Assignment Logic
         if (amt >= 100 && amt <= 499) {
             tabKey = "tab_100_499";
-            const profit = amt * 0.052;
-            returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special Bonus";
         } else if (amt >= 500 && amt <= 999) {
             tabKey = "tab_500_999";
-            const profit = amt * 0.052;
-            returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special Bonus";
         } else if (amt >= 1000 && amt <= 1999) {
             tabKey = "tab_1000_1999";
-            const profit = amt * 0.052;
-            returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special Bonus";
         } else if (amt >= 2000 && amt <= 4999) {
             tabKey = "tab_2000_4999";
-            const profit = amt * 0.052;
-            returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special Bonus";
         } else if (amt >= 5000 && amt <= 9999) {
             tabKey = "tab_5000_9999";
+        } else {
+            tabKey = "tab_10000_above";
+        }
+
+        // Updated Rules for Bonus & Income Calculation
+        if (amt < 150) {
+            // ₹150 se neeche ke orders par simple 4.2%
+            const profit = amt * 0.042;
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "";
+        } else if (amt >= 150 && amt < 10000) {
+            // ₹150 se upar aur ₹10,000 se niche orders par 4.2% + 1% Special Bonus
             const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
         } else {
-            tabKey = "tab_10000_above";
+            // ₹10,000 aur usse upar waale orders par 4.2% + 1% Special + 0.8% Extra Bonus
             const profit = amt * 0.06;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
@@ -938,7 +939,7 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// INVEST ROUTE (Red-circled top banner section removed)
+// INVEST ROUTE
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1005,6 +1006,9 @@ app.get('/invest', async (req, res) => {
             const isGloballyTaken = globallyTakenProductIds.has(p._id);
             const isLocked = hasUserInvested || isGloballyTaken;
 
+            // Condition to show/hide special bonus tag dynamically (Only if >= 150)
+            const showBonusTag = p.price >= 150;
+
             return `
             <div class="bg-gradient-to-br from-gray-900/95 via-gray-900/90 to-slate-900/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
                 <div>
@@ -1015,9 +1019,10 @@ app.get('/invest', async (req, res) => {
                         <p class="text-xs text-gray-300">Amount: <b class="text-white text-sm">₹${p.price}</b></p>
                         <p class="text-xs text-yellow-400 font-bold">Income: +₹${Math.round(p.returnAmount - p.price)}</p>
                     </div>
+                    ${showBonusTag ? `
                     <div class="mt-2 inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 text-[10px] px-2.5 py-1 rounded-lg border border-emerald-500/20 font-bold">
-                        🎁 +₹${Math.round((p.returnAmount - p.price) * 0.2)} Special
-                    </div>
+                        🎁 Special Bonus Included
+                    </div>` : ''}
                 </div>
                 <form action="/invest" method="POST" class="mt-4">
                     <input type="hidden" name="productId" value="${p._id}">
@@ -1067,7 +1072,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE (Deduct price, credit return amount instantly, mark completed & verify exact deposit match)
+// INVESTMENT ROUTE
 app.post('/invest', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -1204,7 +1209,7 @@ app.post('/api/notifications/mark-read', async (req, res) => {
     }
 });
 
-// ORDER HISTORY (Debited Investments with Completed status)
+// ORDER HISTORY
 app.get('/account/investments', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1232,7 +1237,7 @@ app.get('/account/investments', async (req, res) => {
     res.send(renderLayout('Order History', content, req.session.user, req));
 });
 
-// DEDUCTION HISTORY (Admin Minus Balance History with simple amount and date)
+// DEDUCTION HISTORY
 app.get('/account/deductions', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1289,7 +1294,7 @@ app.get('/account/notifications', async (req, res) => {
     res.send(renderLayout('System Notifications', content, req.session.user, req));
 });
 
-// DEPOSIT HISTORY (Pure Deposits Only)
+// DEPOSIT HISTORY
 app.get('/account/deposits', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1776,7 +1781,7 @@ app.get('/admin', async (req, res) => {
             <div>
                 <p class="font-bold text-emerald-400">${ap.name} (${ap.tabKey})</p>
                 <p class="text-gray-300 text-xs mt-1">Price: ₹${ap.price} | Return: ₹${ap.returnAmount}</p>
-                <p class="text-xs text-cyan-300 mt-0.5">Bonus: ${ap.bonusLabel}</p>
+                <p class="text-xs text-cyan-300 mt-0.5">Bonus: ${ap.bonusLabel || 'Standard (4.2%)'}</p>
             </div>
             <span class="text-xs bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-xl font-bold border border-emerald-500/30">Active Live Pool</span>
         </div>
