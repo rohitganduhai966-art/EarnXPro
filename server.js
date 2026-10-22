@@ -148,11 +148,18 @@ function getRandomUpiId() {
     return ROTATING_UPI_IDS[randomIndex];
 }
 
-// Helper to generate dynamic automatic rotating orders categorized by ranges without timer
+// Helper to generate dynamic automatic rotating orders across all diverse ranges
 function generateAutoOrders() {
-    const presetAmounts = [200, 500, 1200, 3500, 7500, 15000, 30000, 48000];
+    const presetAmounts = [
+        150, 250, 350, 450, 650, 850,     // 100 - 900 section
+        1100, 1450, 1750, 1950,           // 900 - 2000 section
+        2200, 2800, 3600, 4500,           // 2000 - 5000 section
+        5500, 6800, 8200, 9500,           // 5000 - 9999 section
+        11000, 14500, 17800, 19900,       // 10000 - 20000 section
+        22000, 28500, 36000, 45000        // 21000 - 50000 section
+    ];
+    
     const autoProducts = [];
-
     const shuffledAmounts = presetAmounts.sort(() => Math.random() - 0.5);
 
     shuffledAmounts.forEach((amt, i) => {
