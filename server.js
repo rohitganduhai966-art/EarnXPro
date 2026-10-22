@@ -10,7 +10,7 @@ const axios = require('axios');
 const app = express();
 const PORT = 7700;
 
-// Direct Working High-Resolution Logo Image URL (High Quality & Clear)
+// High-Resolution & Clear Direct Image URL for Orders & Logo
 const LOGO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop";
 
 // Helper function to get exact IST (Indian Standard Time) Date & Time
@@ -58,7 +58,7 @@ const userSchema = new mongoose.Schema({
         screenshotUrl: String,
         status: { type: String, default: 'Pending' }, 
         date: String,
-        used: { type: Boolean, default: false } // Tracks if this deposit amount has been used for an investment
+        used: { type: Boolean, default: false }
     }],
     deductions: [{
         amount: Number,
@@ -1117,7 +1117,7 @@ app.post('/invest', async (req, res) => {
             productId: productId,
             amount: pPrice,
             returnAmount: pReturn,
-            status: 'Completed', // Marked as Completed instantly
+            status: 'Completed',
             date: getISTDateTime()
         });
         await user.save();
