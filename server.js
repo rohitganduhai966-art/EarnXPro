@@ -1127,7 +1127,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE (Updated to include Special & Extra Bonuses automatically into return amount and wallet credit)
+// INVESTMENT ROUTE (Updated & Fixed to correctly calculate and credit Special & Extra bonuses into user wallet)
 app.post('/invest', async (req, res) => {
     if (!req.session || !req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -1152,7 +1152,7 @@ app.post('/invest', async (req, res) => {
         return res.redirect('/invest');
     }
 
-    // Correct bonus calculation matching frontend display rules
+    // Precise bonus calculation matching exact requirements
     let calculatedReturn = baseReturn;
     if (pPrice >= 150 && pPrice < 10000) {
         // 4.2% base profit + 1% special bonus = 5.2% total return
