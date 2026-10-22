@@ -1057,11 +1057,20 @@ app.get('/invest', async (req, res) => {
             const isGloballyTaken = globallyTakenProductIds.has(p._id);
             const isLocked = hasUserInvested || isGloballyTaken;
 
-            let bonusAmount = 0;
+            let finalReturnAmount = p.returnAmount;
+            let bonusLabelHtml = '';
+
             if (p.price >= 150 && p.price < 10000) {
-                bonusAmount = Math.round(p.price * 0.01);
+                const profit = p.price * 0.052;
+                finalReturnAmount = Math.round(p.price + profit);
+                bonusLabelHtml = `<div class="mt-2 inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 text-[10px] px-2.5 py-1 rounded-lg border border-emerald-500/20 font-bold">🎁 +₹${Math.round(finalReturnAmount - p.price)} total with Special Bonus</div>`;
             } else if (p.price >= 10000) {
-                bonusAmount = Math.round(p.price * 0.018);
+                const profit = p.price * 0.06;
+                finalReturnAmount = Math.round(p.price + profit);
+                bonusLabelHtml = `<div class="mt-2 inline-flex items-center gap-1 bg-cyan-500/10 text-cyan-400 text-[10px] px-2.5 py-1 rounded-lg border border-cyan-500/20 font-bold">🎁 +₹${Math.round(finalReturnAmount - p.price)} total with Special + Extra Bonus</div>`;
+            } else {
+                const profit = p.price * 0.042;
+                finalReturnAmount = Math.round(p.price + profit);
             }
 
             return `
@@ -1072,18 +1081,15 @@ app.get('/invest', async (req, res) => {
                     </div>
                     <div class="flex justify-between items-center mt-2">
                         <p class="text-xs text-gray-300">Amount: <b class="text-white text-sm">₹${p.price}</b></p>
-                        <p class="text-xs text-yellow-400 font-bold">Income: +₹${Math.round(p.returnAmount - p.price)}</p>
+                        <p class="text-xs text-yellow-400 font-bold">Income: +₹${Math.round(finalReturnAmount - p.price)}</p>
                     </div>
-                    ${bonusAmount > 0 ? `
-                    <div class="mt-2 inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 text-[10px] px-2.5 py-1 rounded-lg border border-emerald-500/20 font-bold">
-                        🎁 +₹${bonusAmount} Special Bonus
-                    </div>` : ''}
+                    ${bonusLabelHtml}
                 </div>
                 <form action="/invest" method="POST" class="mt-4">
                     <input type="hidden" name="productId" value="${p._id}">
                     <input type="hidden" name="productName" value="${p.name}">
                     <input type="hidden" name="price" value="${p.price}">
-                    <input type="hidden" name="returnAmount" value="${p.returnAmount}">
+                    <input type="hidden" name="returnAmount" value="${finalReturnAmount}">
                     <button type="submit" class="w-full ${isLocked ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-xs transition-all" ${isLocked ? 'disabled' : ''}>${hasUserInvested ? 'Claimed' : (isGloballyTaken ? 'Sold Out' : 'Claim')}</button>
                 </form>
             </div>
@@ -1127,7 +1133,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE (Updated & Fixed to correctly calculate and credit Special & Extra bonuses into user wallet)
+// INVESTMENT ROUTE (Updated to include Special & Extra Bonuses automatically into return amount and wallet credit)
 app.post('/invest', async (req, res) => {
     if (!req.session || !req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -1152,14 +1158,12 @@ app.post('/invest', async (req, res) => {
         return res.redirect('/invest');
     }
 
-    // Precise bonus calculation matching exact requirements
+    // Correct bonus calculation matching frontend display rules
     let calculatedReturn = baseReturn;
     if (pPrice >= 150 && pPrice < 10000) {
-        // 4.2% base profit + 1% special bonus = 5.2% total return
         const profit = pPrice * 0.052;
         calculatedReturn = Math.round(pPrice + profit);
     } else if (pPrice >= 10000) {
-        // 4.2% base profit + 1% special bonus + 0.8% extra bonus = 6.0% total return
         const profit = pPrice * 0.06;
         calculatedReturn = Math.round(pPrice + profit);
     } else {
