@@ -28,7 +28,7 @@ function getISTDateTime() {
 }
 
 // MongoDB Atlas Connection Setup
-const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
+const MONGO_URI = "mongodb+srv::EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0".replace('::','');
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('MongoDB Connected Successfully'))
@@ -43,7 +43,7 @@ const userSchema = new mongoose.Schema({
     walletBalance: { type: Number, default: 0 },
     is_admin: { type: Boolean, default: false },
     savedUpiIds: [{
-        appName: String, // 'Google Pay', 'PhonePe', 'Paytm', 'MobiKwik'
+        appName: String, 
         upiId: String
     }],
     deposits: [{
@@ -51,7 +51,7 @@ const userSchema = new mongoose.Schema({
         utr: String,
         gateway: String,
         screenshotUrl: String,
-        status: { type: String, default: 'Pending' }, // Pending, Completed, Failed, Fake / Suspicious
+        status: { type: String, default: 'Pending' }, 
         date: String
     }],
     withdrawals: [{
@@ -139,20 +139,17 @@ function validateOfficialUpi(upiId) {
 
 // Advanced Fake & Fraud Payment Detector
 async function detectFakeOrFraudPayment(utr, amount) {
-    // 1. Check if UTR is exactly 12 digits numeric
     const utrRegex = /^[0-9]{12}$/;
     if (!utrRegex.test(utr)) {
         return { isFake: true, reason: "Invalid UTR format (Must be strictly 12 numeric digits)" };
     }
 
-    // 2. Check if UTR has already been used across any user in database (Duplicate Fraud Check)
     const existingUtr = await User.findOne({ "deposits.utr": utr });
     if (existingUtr) {
         return { isFake: true, reason: "Duplicate UTR detected (Already used in system)" };
     }
 
-    // 3. Fake App Pattern Detection (Check for sequential or repetitive patterns typical of fake screenshot/prank apps)
-    const allSameDigits = /^(\d)\1{11}$/.test(utr); // e.g. 111111111111
+    const allSameDigits = /^(\d)\1{11}$/.test(utr);
     const sequentialDigits = "012345678901,123456789012,234567890123,345678901234,456789012345,567890123456,678901234567,789012345678,890123456789,901234567890".includes(utr);
     
     if (allSameDigits || sequentialDigits) {
@@ -179,17 +176,11 @@ async function getRandomUpiId() {
 // Helper to generate dynamic automatic rotating orders covering exact 100-900 & all range sequences completely
 function generateAutoOrders() {
     const presetAmounts = [
-        // ₹100 - ₹900 Section (Includes 100, 200, 300, 400, 500, 600, 700, 800, 900 and intermediate amounts)
         100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900,
-        // ₹900 - ₹2000 Section
         950, 1000, 1200, 1400, 1500, 1700, 1900, 2000,
-        // ₹2000 - ₹5000 Section
         2200, 2500, 2800, 3000, 3500, 4000, 4500, 5000,
-        // ₹5000 - ₹9999 Section
         5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 9900,
-        // ₹10000 - ₹20000 Section
         10000, 12000, 14000, 15000, 17000, 19000, 20000,
-        // ₹21000 - ₹50000 Section
         22000, 25000, 30000, 35000, 40000, 45000, 50000
     ];
     
@@ -247,7 +238,6 @@ function generateAutoOrders() {
     return autoProducts;
 }
 
-// Ensure uploads directory exists for screenshots
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -331,32 +321,25 @@ app.post('/telegram-webhook', async (req, res) => {
                     { chatId },
                     { upsert: true, new: true }
                 );
-                console.log(`[WEBHOOK SUCCESS] Captured Chat ID ${chatId} for ${formattedUsername}`);
 
                 if (msg.text && msg.text.startsWith('/start')) {
                     axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                         chat_id: chatId,
                         text: `*Welcome to EarnX Pro Official OTP Verification Bot!*\n\nYour account is now verified and linked with username *${formattedUsername}*. You will receive your OTPs here directly.`,
                         parse_mode: 'Markdown'
-                    }).catch(e => console.error('[BOT AUTO REPLY ERROR]:', e.message));
+                    }).catch(e => {});
                 }
             }
         }
-    } catch (err) {
-        console.error('[WEBHOOK PROCESS ERROR]:', err.message);
-    }
+    } catch (err) {}
     res.sendStatus(200);
 });
 
 async function setupTelegramWebhook() {
     try {
         const webhookUrl = `${RENDER_DOMAIN}/telegram-webhook`;
-        const setUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${webhookUrl}`;
-        const response = await axios.get(setUrl);
-        console.log('[TELEGRAM WEBHOOK CONFIG]:', response.data.description || 'Webhook Configured');
-    } catch (err) {
-        console.error('[TELEGRAM WEBHOOK ERROR]:', err.message);
-    }
+        await axios.get(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${webhookUrl}`);
+    } catch (err) {}
 }
 
 async function sendRealOTP(username, otp, callback) {
@@ -366,50 +349,36 @@ async function sendRealOTP(username, otp, callback) {
 
         if (!targetChatId) {
             try {
-                const updatesUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
-                const res = await axios.get(updatesUrl);
+                const res = await axios.get(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`);
                 const results = res.data.result || [];
-                
                 for (let update of results) {
                     const msg = update.message || update.edited_message;
                     if (msg && msg.from) {
                         const fromUsername = '@' + (msg.from.username || '').toLowerCase();
                         const chatId = msg.from.id;
                         if (fromUsername) {
-                            await ChatId.findOneAndUpdate(
-                                { username: fromUsername },
-                                { chatId },
-                                { upsert: true, new: true }
-                            );
+                            await ChatId.findOneAndUpdate({ username: fromUsername }, { chatId }, { upsert: true, new: true });
                             if (fromUsername === username.toLowerCase()) {
                                 targetChatId = chatId;
                             }
                         }
                     }
                 }
-            } catch (err) {
-                console.error('[TELEGRAM GET UPDATES ERROR]:', err.message);
-            }
+            } catch (err) {}
         }
 
         if (!targetChatId) {
-            console.log(`[TELEGRAM ERROR] Chat ID not found for ${username}. User must start bot @EarnXPro_09bot first.`);
             callback(false);
             return;
         }
 
-        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-        const messageText = `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`;
-
-        await axios.post(url, {
+        await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             chat_id: targetChatId,
-            text: messageText,
+            text: `*EarnX Pro Verification Code*\n\nYour OTP is: *${otp}*\nPlease do not share this code with anyone.`,
             parse_mode: 'Markdown'
         });
-        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to ${username} (Chat ID: ${targetChatId})`);
         callback(true);
     } catch (error) {
-        console.error('[TELEGRAM SEND ERROR]:', error.response?.data || error.message);
         callback(false);
     }
 }
@@ -423,7 +392,6 @@ app.use(session({
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Layout Template
 function renderLayout(title, content, user, req) {
     let bottomNav = '';
     let topHeaderRight = '';
@@ -586,7 +554,6 @@ app.get('/logout', (req, res) => {
     });
 });
 
-// Login Page with Remember Me Feature
 app.get('/login', (req, res) => {
     req.session.modalShown = false;
     const formHtml = `
@@ -672,7 +639,6 @@ app.post('/login', async (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Signup
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -806,7 +772,6 @@ app.post('/verify-signup-otp', async (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Forgot Password
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
@@ -884,7 +849,6 @@ app.post('/verify-and-reset', async (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-// Daily Check-In
 app.get('/daily-signin', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -902,7 +866,6 @@ app.get('/daily-signin', async (req, res) => {
     res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Wallet Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
 });
 
-// Home Page
 app.get('/home', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -964,7 +927,6 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page with Collapsible Section Cards (Tap to Open Specific Section Orders)
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1137,7 +1099,6 @@ app.post('/invest', async (req, res) => {
     res.redirect('/invest');
 });
 
-// Team Page
 app.get('/team', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1208,7 +1169,6 @@ app.post('/api/notifications/mark-read', async (req, res) => {
     }
 });
 
-// Account Menu Sub-pages
 app.get('/account/investments', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1298,9 +1258,9 @@ app.get('/account/deposits', async (req, res) => {
 
     const content = `
         <div class="space-y-4 max-w-lg mx-auto">
-            <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📜</span> Deposit History</h2>
+            <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📜</span> Deposit & Order History</h2>
             <div class="space-y-2">
-                ${depositHistoryHtml.length ? depositHistoryHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No deposit history found.</p>'}
+                ${depositHistoryHtml.length ? depositHistoryHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No deposit or order history found.</p>'}
             </div>
             <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
         </div>
@@ -1308,7 +1268,6 @@ app.get('/account/deposits', async (req, res) => {
     res.send(renderLayout('Deposit History', content, req.session.user, req));
 });
 
-// Account Page
 app.get('/account', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1364,7 +1323,7 @@ app.get('/account', async (req, res) => {
                 </a>
 
                 <a href="/account/deposits" class="menu-link-btn">
-                    <span class="flex items-center gap-3"><span>📜</span> View Deposit History</span>
+                    <span class="flex items-center gap-3"><span>📜</span> View Deposit & Order History</span>
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
             </div>
@@ -1373,7 +1332,6 @@ app.get('/account', async (req, res) => {
     res.send(renderLayout('Account Dashboard', content, req.session.user, req));
 });
 
-// Deposit Page
 app.get('/deposit', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -1389,7 +1347,7 @@ app.get('/deposit', async (req, res) => {
         } else if (d.status === 'Fake / Suspicious') {
             statusColor = 'text-red-400';
             displayStatus = 'Fake / Suspicious';
-        } else if (d.status === 'Rejected' || d.status === 'Failed') {
+        } else if (d.status === 'Failed' || d.status === 'Rejected') {
             statusColor = 'text-red-400';
             displayStatus = 'Failed';
         }
@@ -1537,9 +1495,7 @@ app.get('/deposit', async (req, res) => {
                     } else {
                         window.location.reload();
                     }
-                } catch (err) {
-                    console.error(err);
-                }
+                } catch (err) {}
             });
         </script>
     `;
@@ -1554,7 +1510,6 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Payment screenshot is mandatory!</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
 
-    // Run Automated Fake & Fraud Detection Engine
     const fraudCheck = await detectFakeOrFraudPayment(utr, amount);
     const assignedStatus = fraudCheck.isFake ? 'Fake / Suspicious' : 'Pending';
 
@@ -1579,7 +1534,6 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     res.redirect('/deposit');
 });
 
-// Withdrawal Page
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -1662,7 +1616,7 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel with Filtered Deposits (Real vs Fake Detection Tab)
+// Admin Panel with Balance Update (Plus/Minus supporting Order History)
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
@@ -1681,7 +1635,7 @@ app.get('/admin', async (req, res) => {
                 </div>
                 <form action="/admin/add-balance" method="POST" class="flex space-x-1">
                     <input type="hidden" name="username" value="${u.username}">
-                    <input type="number" name="amount" placeholder="+/- Amt" class="w-20 bg-gray-900 text-white p-2 rounded-xl text-xs border border-gray-700" required>
+                    <input type="number" step="any" name="amount" placeholder="e.g. +500 or -200" class="w-32 bg-gray-900 text-white p-2 rounded-xl text-xs border border-gray-700" required>
                     <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Update</button>
                 </form>
             </div>
@@ -1806,7 +1760,7 @@ app.get('/admin', async (req, res) => {
 
     let activeTabContent = '';
     if (tab === 'users') {
-        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users (Manage Balance: +500 or -200)</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
     } else if (tab === 'deposits') {
         activeTabContent = `
             <div class="space-y-6">
@@ -1950,12 +1904,25 @@ app.post('/admin/delete-product', async (req, res) => {
     res.redirect('/admin?tab=products');
 });
 
+// Admin Route to Increase or Decrease User Balance (Plus/Minus and log in deposit/order history)
 app.post('/admin/add-balance', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, amount } = req.body;
     let user = await User.findOne({ username });
     if (user) {
-        user.walletBalance = (user.walletBalance || 0) + parseFloat(amount);
+        let diff = parseFloat(amount);
+        user.walletBalance = (user.walletBalance || 0) + diff;
+        
+        if (!user.deposits) user.deposits = [];
+        let actionLabel = diff >= 0 ? 'ADMIN_CREDIT' : 'ADMIN_DEBIT';
+        user.deposits.push({
+            amount: Math.abs(diff),
+            utr: actionLabel + '_' + Math.floor(Math.random() * 900000 + 100000),
+            gateway: diff >= 0 ? 'Admin Balance Added (+)' : 'Admin Balance Deducted (-)',
+            status: 'Completed',
+            date: getISTDateTime()
+        });
+
         await user.save();
     }
     res.redirect('/admin?tab=users');
