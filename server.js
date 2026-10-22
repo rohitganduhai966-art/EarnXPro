@@ -995,7 +995,7 @@ app.get('/invest', async (req, res) => {
             
             return `
             <div class="bg-gradient-to-br from-gray-900/95 via-gray-900/90 to-slate-900/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
-                ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-32 object-cover rounded-2xl mb-3 border border-gray-800">` : ''}
+                ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-32 object-contain bg-gray-950/80 rounded-2xl mb-3 border border-gray-800">` : ''}
                 <div>
                     <div class="flex justify-between items-center">
                         <h4 class="font-black text-base text-emerald-400">${p.name}</h4>
