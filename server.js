@@ -147,8 +147,30 @@ function validateOfficialUpi(upiId) {
     return null;
 }
 
+// Strict Official App Source Verification for Deposits
+function validateOfficialAppSource(upiId) {
+    upiId = (upiId || "").trim().toLowerCase();
+    
+    const gpayHandles = ['okaxis', 'okicici', 'oksbi', 'okhdfcbank', 'gpay'];
+    const phonepeHandles = ['ybl', 'ibl', 'axl'];
+    const paytmHandles = ['paytm'];
+    const mobikwikHandles = ['mbk', 'ikwik', 'mbkns'];
+
+    const parts = upiId.split('@');
+    if (parts.length !== 2) return { isValid: false, appName: 'Unknown' };
+
+    const handle = parts[1];
+
+    if (gpayHandles.includes(handle)) return { isValid: true, appName: 'Google Pay' };
+    if (phonepeHandles.includes(handle)) return { isValid: true, appName: 'PhonePe' };
+    if (paytmHandles.includes(handle)) return { isValid: true, appName: 'Paytm' };
+    if (mobikwikHandles.includes(handle)) return { isValid: true, appName: 'MobiKwik' };
+
+    return { isValid: false, appName: 'Third-Party / Unauthorized' };
+}
+
 // Advanced Fake & Fraud Payment Detector
-async function detectFakeOrFraudPayment(utr, amount) {
+async function detectFakeOrFraudPayment(utr, amount, clientUpiId) {
     const utrRegex = /^[0-9]{12}$/;
     if (!utrRegex.test(utr)) {
         return { isFake: true, reason: "Invalid UTR format (Must be strictly 12 numeric digits)" };
@@ -166,7 +188,12 @@ async function detectFakeOrFraudPayment(utr, amount) {
         return { isFake: true, reason: "Suspicious or Fake App Pattern detected in UTR digits" };
     }
 
-    return { isFake: false, reason: "Passed automated security check" };
+    const appSourceCheck = validateOfficialAppSource(clientUpiId);
+    if (!appSourceCheck.isValid) {
+        return { isFake: true, reason: "Unauthorized third-party app or external gateway detected! Only Google Pay, PhonePe, Paytm & MobiKwik are allowed." };
+    }
+
+    return { isFake: false, reason: `Passed security check via ${appSourceCheck.appName}` };
 }
 
 // Dynamic Rotating UPI Fetcher from DB
@@ -1133,7 +1160,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE (Updated to include Special & Extra Bonuses automatically into return amount and wallet credit)
+// INVESTMENT ROUTE
 app.post('/invest', async (req, res) => {
     if (!req.session || !req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -1158,7 +1185,6 @@ app.post('/invest', async (req, res) => {
         return res.redirect('/invest');
     }
 
-    // Correct bonus calculation matching frontend display rules
     let calculatedReturn = baseReturn;
     if (pPrice >= 150 && pPrice < 10000) {
         const profit = pPrice * 0.052;
@@ -1529,7 +1555,7 @@ app.get('/deposit', async (req, res) => {
             <h2 class="text-xl font-black text-emerald-400">Deposit Funds (₹100 - ₹50,000)</h2>
 
             <div class="deposit-warning">
-                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below. Fake screenshots or edited apps will be instantly detected and flagged as fraudulent by our system.
+                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 official UPI apps provided below. Fake screenshots or third-party apps will be instantly detected and flagged as fraudulent by our system.
             </div>
             
             <div id="step-amount">
@@ -1549,16 +1575,18 @@ app.get('/deposit', async (req, res) => {
                     <button onclick="navigator.clipboard.writeText('${assignedUpi}'); alert('UPI ID Copied!');" class="bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white text-xs px-3.5 py-2 rounded-xl font-bold shadow">Copy UPI</button>
                 </div>
 
+                <!-- 4 Official Branded App Buttons -->
                 <div class="upi-options-grid grid grid-cols-2 gap-2.5">
-                    <button type="button" onclick="launchApp('gpay')" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Google Pay</button>
-                    <button type="button" onclick="launchApp('phonepe')" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">PhonePe</button>
-                    <button type="button" onclick="launchApp('paytm')" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">Paytm</button>
-                    <button type="button" onclick="launchApp('mobikwik')" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-2.5 rounded-xl text-xs font-bold block shadow w-full">MobiKwik</button>
+                    <button type="button" onclick="launchOfficialApp('gpay')" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🔵 Google Pay Official</button>
+                    <button type="button" onclick="launchOfficialApp('phonepe')" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🟣 PhonePe Official</button>
+                    <button type="button" onclick="launchOfficialApp('paytm')" class="upi-app-btn bg-sky-600 hover:bg-sky-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🔵 Paytm Official</button>
+                    <button type="button" onclick="launchOfficialApp('mobikwik')" class="upi-app-btn bg-orange-600 hover:bg-orange-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🟠 MobiKwik Official</button>
                 </div>
 
                 <form action="/deposit" method="POST" enctype="multipart/form-data" class="space-y-3" id="depositForm">
                     <input type="hidden" name="amount" id="final_amount">
                     <input type="hidden" name="gateway" value="${assignedUpi}">
+                    <input type="hidden" name="selectedApp" id="selectedAppInput" value="unknown">
                     <input type="text" name="utr" id="utrInput" placeholder="Enter 12-digit UTR" pattern="[0-9]{12}" maxlength="12" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500">
                     <small id="utrError" style="color: #ff5252; display: none;">UTR must be exactly 12 numeric digits.</small>
                     <div>
@@ -1605,21 +1633,22 @@ app.get('/deposit', async (req, res) => {
                 }, 1000);
             });
 
-            function launchApp(app) {
+            function launchOfficialApp(appType) {
                 const amt = document.getElementById('deposit_amount').value;
                 const upiId = '${assignedUpi}';
                 let targetUrl = '';
 
-                if (app === 'gpay') {
+                if (appType === 'gpay') {
                     targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                } else if (app === 'phonepe') {
-                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                } else if (app === 'paytm') {
+                } else if (appType === 'phonepe') {
+                    targetUrl = 'phonepe://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                } else if (appType === 'paytm') {
                     targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                } else if (app === 'mobikwik') {
-                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                } else if (appType === 'mobikwik') {
+                    targetUrl = 'mobikwik://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 }
 
+                document.getElementById('selectedAppInput').value = appType;
                 window.location.href = targetUrl;
             }
 
@@ -1639,6 +1668,7 @@ app.get('/deposit', async (req, res) => {
                 const formData = new FormData();
                 formData.append('amount', document.getElementById('final_amount').value);
                 formData.append('gateway', '${assignedUpi}');
+                formData.append('selectedApp', document.getElementById('selectedAppInput').value);
                 formData.append('utr', utrVal);
                 formData.append('screenshot', document.getElementById('screenshotFile').files[0]);
 
@@ -1662,13 +1692,13 @@ app.get('/deposit', async (req, res) => {
 
 app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     if (!req.session || !req.session.user) return res.redirect('/login');
-    const { amount, utr, gateway } = req.body;
+    const { amount, utr, gateway, selectedApp } = req.body;
     
     if (!req.file) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Payment screenshot is mandatory!</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
 
-    const fraudCheck = await detectFakeOrFraudPayment(utr, amount);
+    const fraudCheck = await detectFakeOrFraudPayment(utr, amount, gateway);
     const assignedStatus = fraudCheck.isFake ? 'Fake / Suspicious' : 'Pending';
 
     let user = await User.findOne({ username: req.session.user.username });
@@ -1677,7 +1707,7 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
         user.deposits.push({ 
             amount: parseFloat(amount), 
             utr, 
-            gateway: gateway || 'UPI',
+            gateway: `${gateway} (${selectedApp || 'Official App'})`,
             screenshotUrl: `/uploads/${req.file.filename}`,
             status: assignedStatus, 
             date: getISTDateTime(),
