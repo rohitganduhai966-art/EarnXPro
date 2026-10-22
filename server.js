@@ -1,3 +1,4 @@
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const session = require('express-session');
@@ -27,12 +28,17 @@ function getISTDateTime() {
     });
 }
 
-// MongoDB Atlas Connection Setup
-const MONGO_URI = "mongodb+srv::EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0".replace('::','');
+// MongoDB Atlas Connection Setup with timeout fix
+const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
-mongoose.connect(MONGO_URI)
-    .then(() => console.log('MongoDB Connected Successfully'))
-    .catch(err => console.error('MongoDB Connection Error:', err));
+mongoose.connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 10000 // 10 seconds timeout taaki buffering error na aaye
+})
+.then(async () => {
+    console.log('MongoDB Connected Successfully');
+    await ensureDefaultAdmin();
+})
+.catch(err => console.error('MongoDB Connection Error:', err));
 
 // Mongoose Schema Definitions for Permanent Cloud Storage
 const userSchema = new mongoose.Schema({
@@ -286,7 +292,6 @@ async function ensureDefaultAdmin() {
         console.error('[MONGODB ADMIN ERROR]:', err.message);
     }
 }
-setTimeout(ensureDefaultAdmin, 2000);
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
