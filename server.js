@@ -915,7 +915,7 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page with Collapsible/Tappable Section Cards for Exact 6 Ranges
+// Invest Page with Collapsible Section Cards (Tap to Open Specific Section Orders)
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -999,9 +999,9 @@ app.get('/invest', async (req, res) => {
 
         sectionCardsHtml += `
             <div class="mb-4 bg-gray-900/90 border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
-                <button onclick="toggleSection('${boxId}')" class="w-full p-4 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-950 hover:from-gray-800 hover:to-gray-900 transition-colors text-left">
+                <button onclick="toggleSection('${boxId}')" class="w-full p-4 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-950 hover:from-gray-800 hover:to-gray-900 transition-colors text-left cursor-pointer">
                     <span class="text-base font-black text-yellow-400 flex items-center gap-2"><span>📂</span> ${sectionName} (${productsList.length} Orders)</span>
-                    <span id="arrow_${boxId}" class="text-yellow-400 font-bold text-lg transition-transform">▼</span>
+                    <span id="arrow_${boxId}" class="text-yellow-400 font-bold text-lg transition-transform duration-200">▼</span>
                 </button>
                 <div id="${boxId}" style="display: none;" class="p-4 border-t border-gray-800 bg-gray-950/60">
                     ${cardsHtml.length ? cardsHtml : '<p class="text-gray-400 text-xs text-center py-6">No orders available in this section currently.</p>'}
