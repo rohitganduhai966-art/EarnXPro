@@ -59,6 +59,11 @@ const userSchema = new mongoose.Schema({
         status: { type: String, default: 'Pending' }, 
         date: String
     }],
+    // Added dedicated deduction history array for minus balance transactions
+    deductions: [{
+        amount: Number,
+        date: String
+    }],
     withdrawals: [{
         amount: Number,
         upiId: String,
@@ -261,6 +266,7 @@ async function ensureDefaultAdmin() {
                 is_admin: true,
                 savedUpiIds: [],
                 deposits: [],
+                deductions: [],
                 withdrawals: [],
                 investments: [],
                 notifications: [],
@@ -761,6 +767,7 @@ app.post('/verify-signup-otp', async (req, res) => {
             is_admin: false,
             savedUpiIds: [],
             deposits: [],
+            deductions: [],
             withdrawals: [],
             investments: [],
             notifications: [],
@@ -1204,6 +1211,32 @@ app.get('/account/investments', async (req, res) => {
     res.send(renderLayout('Order History', content, req.session.user, req));
 });
 
+// DEDUCTION HISTORY (Admin Minus Balance History with simple amount and date)
+app.get('/account/deductions', async (req, res) => {
+    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let currentUser = await User.findOne({ username: req.session.user.username });
+
+    let deductionsHtml = (currentUser.deductions || []).map(d => `
+        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl border border-gray-800 text-sm flex justify-between items-center mb-3 shadow-2xl">
+            <div>
+                <p class="text-red-400 font-bold text-base">- ₹${d.amount}</p>
+                <p class="text-xs text-gray-400 mt-1">${d.date}</p>
+            </div>
+        </div>
+    `).join('');
+
+    const content = `
+        <div class="space-y-4 max-w-lg mx-auto">
+            <h2 class="text-xl font-black text-red-400 flex items-center gap-2"><span>📜</span> Deduction History</h2>
+            <div class="space-y-2">
+                ${deductionsHtml.length ? deductionsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No deduction history found.</p>'}
+            </div>
+            <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
+        </div>
+    `;
+    res.send(renderLayout('Deduction History', content, req.session.user, req));
+});
+
 app.get('/account/notifications', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1321,6 +1354,11 @@ app.get('/account', async (req, res) => {
             <div class="space-y-3 mt-4 action-buttons-stack">
                 <a href="/account/investments" class="menu-link-btn">
                     <span class="flex items-center gap-3"><span>📈</span> My Order History (Completed)</span>
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+
+                <a href="/account/deductions" class="menu-link-btn">
+                    <span class="flex items-center gap-3"><span>📜</span> Deduction History</span>
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
 
@@ -1922,7 +1960,14 @@ app.post('/admin/add-balance', async (req, res) => {
         let diff = parseFloat(amount);
         user.walletBalance = (user.walletBalance || 0) + diff;
         
-        if (diff > 0) {
+        // If amount is negative (deduction), record it in deductions history without any admin name
+        if (diff < 0) {
+            if (!user.deductions) user.deductions = [];
+            user.deductions.push({
+                amount: Math.abs(diff),
+                date: getISTDateTime()
+            });
+        } else if (diff > 0) {
             if (!user.deposits) user.deposits = [];
             user.deposits.push({
                 amount: diff,
