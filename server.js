@@ -150,6 +150,47 @@ function getRandomUpiId() {
     return ROTATING_UPI_IDS[randomIndex];
 }
 
+// Helper to generate dynamic automatic rotating orders (Max 3 minutes duration)
+function generateAutoOrders() {
+    const presetAmounts = [200, 500, 1000, 2500, 5000, 8000, 12000, 20000, 35000, 50000];
+    const autoProducts = [];
+
+    // Shuffle amounts randomly
+    const shuffledAmounts = presetAmounts.sort(() => Math.random() - 0.5);
+
+    shuffledAmounts.forEach((amt, i) => {
+        let returnAmt = 0;
+        let bonusLabel = "";
+
+        if (amt < 10000) {
+            // 4.2% + 1% Special Bonus = 5.2% Total Profit
+            const profit = amt * 0.052;
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "4.2% + 1% Special Bonus";
+        } else {
+            // 4.2% + 1% Special + 0.8% Extra Bonus = 6.0% Total Profit
+            const profit = amt * 0.06;
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
+        }
+
+        // Random timer between 1 to 3 minutes (Max 3 minutes)
+        const durationMins = Math.floor(Math.random() * 3) + 1;
+
+        autoProducts.push({
+            _id: `auto_order_${amt}_${i}`,
+            name: `Auto Dynamic Pool #${100 + i}`,
+            price: amt,
+            returnAmount: returnAmt,
+            durationMinutes: durationMins,
+            bonusLabel: bonusLabel,
+            imageUrl: LOGO_URL
+        });
+    });
+
+    return autoProducts;
+}
+
 // Ensure uploads directory exists for screenshots
 const UPLOAD_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -909,41 +950,44 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page with Auto-Rotating / Shuffling Orders & Specific Bonus Tiers
+// Invest Page (Combined Automatic Rotating System Orders + Manual Database Products)
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
-    let products = await Product.find({});
+    
+    // Fetch DB Products + Generate Automatic Rotating System Orders (Max 3 Min timers)
+    let dbProducts = await Product.find({});
+    let autoProducts = generateAutoOrders();
 
-    // Shuffle orders automatically on each load
-    products = products.sort(() => Math.random() - 0.5);
+    // Combine both and shuffle
+    let allProducts = [...dbProducts, ...autoProducts].sort(() => Math.random() - 0.5);
 
-    let productsHtml = products.map((p, index) => {
+    let productsHtml = allProducts.map((p, index) => {
         const hasInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
-        
-        // Determine return text based on price range
-        let returnText = "";
-        if (p.price >= 100 && p.price <= 9999) {
-            returnText = `Return (4.2% + 1% Special Bonus): ₹${p.returnAmount}`;
-        } else if (p.price >= 10000 && p.price <= 50000) {
-            returnText = `Return (4.2% + 1% Special + 0.8% Extra Bonus): ₹${p.returnAmount}`;
-        } else {
-            returnText = `Return: ₹${p.returnAmount}`;
-        }
+
+        let bonusText = p.bonusLabel ? p.bonusLabel : (p.price < 10000 ? "4.2% + 1% Special Bonus" : "4.2% + 1% Special + 0.8% Extra Bonus");
         
         return `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl">
             ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-36 object-cover rounded-2xl mb-3 border border-gray-800">` : ''}
             <div>
-                <h4 class="font-black text-lg text-emerald-400">${p.name}</h4>
-                <div class="flex justify-between items-center mt-2">
-                    <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
-                    <p class="text-xs text-yellow-400 font-bold">${returnText}</p>
+                <div class="flex justify-between items-center">
+                    <h4 class="font-black text-lg text-emerald-400">${p.name}</h4>
+                    <span class="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold">⏱️ Max ${p.durationMinutes} Min</span>
                 </div>
-                <p class="text-xs text-gray-400 mt-1">Duration: ${p.durationMinutes >= 60 ? (p.durationMinutes / 60) + ' Hours' : p.durationMinutes + ' Minutes'}</p>
+                <p class="text-[11px] text-cyan-300 font-semibold mt-1">🎁 ${bonusText}</p>
+                <div class="flex justify-between items-center mt-3">
+                    <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
+                    <p class="text-sm text-yellow-400 font-bold">Total Return: ₹${p.returnAmount}</p>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">Completion Time: ${p.durationMinutes} Minutes</p>
             </div>
             <form action="/invest" method="POST" class="mt-4">
                 <input type="hidden" name="productId" value="${p._id}">
+                <input type="hidden" name="productName" value="${p.name}">
+                <input type="hidden" name="price" value="${p.price}">
+                <input type="hidden" name="returnAmount" value="${p.returnAmount}">
+                <input type="hidden" name="durationMinutes" value="${p.durationMinutes}">
                 <button type="submit" id="investBtn_${index}" class="w-full ${hasInvested ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-sm transition-all" ${hasInvested ? 'disabled' : ''}>${hasInvested ? 'Already Invested' : 'Invest Now'}</button>
             </form>
         </div>
@@ -952,9 +996,12 @@ app.get('/invest', async (req, res) => {
 
     const content = `
         <div class="space-y-6">
-            <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>📦</span> Investment Products (Auto-Rotating)</h2>
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>📦</span> Automatic Live Orders</h2>
+                <button onclick="location.reload()" class="text-xs bg-blue-600/80 hover:bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold border border-blue-400/30 transition-all">🔄 Refresh Orders</button>
+            </div>
             <div class="grid grid-cols-1 gap-4">
-                ${products.length ? productsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No products available currently.</p>'}
+                ${productsHtml.length ? productsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No products available currently.</p>'}
             </div>
         </div>
     `;
@@ -963,11 +1010,30 @@ app.get('/invest', async (req, res) => {
 
 app.post('/invest', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
-    const { productId } = req.body;
+    let { productId, productName, price, returnAmount, durationMinutes } = req.body;
     let user = await User.findOne({ username: req.session.user.username });
-    let product = await Product.findOne({ _id: productId });
 
-    if (!user || !product) {
+    let pPrice = 0;
+    let pReturn = 0;
+    let pDuration = 1;
+    let pName = "";
+
+    // Check if product exists in MongoDB first
+    let product = await Product.findOne({ _id: productId });
+    if (product) {
+        pPrice = product.price;
+        pReturn = product.returnAmount;
+        pDuration = product.durationMinutes;
+        pName = product.name;
+    } else {
+        // Fallback to Dynamic Auto Order payload parameters
+        pPrice = parseFloat(price);
+        pReturn = parseFloat(returnAmount);
+        pDuration = parseInt(durationMinutes) || 3;
+        pName = productName || 'Automatic Dynamic Order';
+    }
+
+    if (!user || !pPrice) {
         return res.redirect('/invest');
     }
 
@@ -976,21 +1042,26 @@ app.post('/invest', async (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is product mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
-    if ((user.rechargeBalance || 0) >= product.price) {
-        user.rechargeBalance -= product.price;
+    if ((user.rechargeBalance || 0) >= pPrice) {
+        user.rechargeBalance -= pPrice;
         if (!user.investments) user.investments = [];
         
-        const endTime = Date.now() + (product.durationMinutes * 60 * 1000);
+        // Enforce max 3 minutes timer limit for quick order completion
+        const finalDuration = Math.min(pDuration, 3);
+        const endTime = Date.now() + (finalDuration * 60 * 1000);
+
         user.investments.push({
-            productName: product.name,
+            productName: pName,
             productId: productId,
-            amount: product.price,
-            returnAmount: product.returnAmount,
+            amount: pPrice,
+            returnAmount: pReturn,
             endTime: endTime,
             status: 'Active',
             date: getISTDateTime()
         });
         await user.save();
+    } else {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Insufficient Recharge Balance! Please recharge your wallet first.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Recharge Now</a>`, user, req));
     }
     res.redirect('/invest');
 });
@@ -1743,7 +1814,7 @@ app.get('/admin', async (req, res) => {
                 <div class="flex justify-between items-center">
                     <div>
                         <p class="font-bold text-emerald-400 text-base">${p.name}</p>
-                        <p class="text-gray-300 text-xs mt-0.5">Price: ₹${p.price} | Return: ₹${p.returnAmount} | Timer: ${p.durationMinutes >= 60 ? (p.durationMinutes / 60) + ' Hours' : p.durationMinutes + 'm'}</p>
+                        <p class="text-gray-300 text-xs mt-0.5">Price: ₹${p.price} | Return: ₹${p.returnAmount} | Timer: ${p.durationMinutes}m</p>
                     </div>
                     <form action="/admin/delete-product" method="POST">
                         <input type="hidden" name="productId" value="${p._id}">
@@ -1772,25 +1843,24 @@ app.get('/admin', async (req, res) => {
     } else if (tab === 'products') {
         activeTabContent = `
             <div class="space-y-5">
-                <h3 class="font-bold text-yellow-400 text-base">📦 Add New Investment Product (Auto-Rotating Tiers)</h3>
+                <h3 class="font-bold text-yellow-400 text-base">📦 Add Custom Product (Max Timer 3 Mins)</h3>
                 <form action="/admin/add-product" method="POST" class="space-y-3 bg-gray-800/80 p-4 rounded-2xl border border-gray-700">
                     <input type="text" name="name" placeholder="Product Name" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
-                    <input type="number" name="price" placeholder="Product Price (₹) [₹100-₹9999 or ₹10k-₹50k]" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                    <input type="number" name="price" placeholder="Product Price (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     <input type="number" name="returnAmount" placeholder="Return Income Amount (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     
                     <div class="flex space-x-2">
-                        <input type="number" name="durationValue" placeholder="Duration (e.g. 120 or 2)" required class="w-2/3 bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                        <input type="number" name="durationValue" placeholder="Duration (e.g. 1, 2, or 3)" max="3" required class="w-2/3 bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                         <select name="durationType" class="w-1/3 bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                             <option value="minutes">Minutes</option>
-                            <option value="hours">Hours</option>
                         </select>
                     </div>
 
                     <input type="text" name="imageUrl" placeholder="Image URL (optional)" class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
-                    <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-yellow-500/20">Add Product</button>
+                    <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-yellow-500/20">Add Custom Product</button>
                 </form>
-                <h3 class="font-bold text-yellow-400 text-base mt-6">Manage Products & Delete</h3>
-                <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml.join('') : '<p class="text-gray-400 text-sm text-center py-6">No products added.</p>'}</div>
+                <h3 class="font-bold text-yellow-400 text-base mt-6">Custom Products List</h3>
+                <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml.join('') : '<p class="text-gray-400 text-sm text-center py-6">No custom products added.</p>'}</div>
             </div>
         `;
     } else if (tab === 'send-funds') {
@@ -1860,9 +1930,8 @@ app.post('/admin/add-product', async (req, res) => {
     const { name, price, returnAmount, durationValue, durationType, imageUrl } = req.body;
     
     let durationMinutes = parseInt(durationValue);
-    if (durationType === 'hours') {
-        durationMinutes = durationMinutes * 60;
-    }
+    // Enforce max 3 minutes limit
+    if (durationMinutes > 3) durationMinutes = 3;
 
     await Product.create({
         _id: 'prod_' + Date.now(),
