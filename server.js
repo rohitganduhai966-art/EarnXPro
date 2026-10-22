@@ -8,7 +8,7 @@ const mongoose = require('mongoose');
 const axios = require('axios');
 
 const app = express();
-const PORT = 7700;
+const PORT = process.env.PORT || 7700;
 
 // Direct Working Logo Image URL
 const LOGO_URL = "https://i.ibb.co/W45ZtnvZ/8121.jpg";
@@ -202,7 +202,6 @@ function generateAutoOrders() {
         let bonusLabel = "";
         let tabKey = "";
 
-        // Tab Assignment Logic
         if (amt >= 100 && amt <= 499) {
             tabKey = "tab_100_499";
         } else if (amt >= 500 && amt <= 999) {
@@ -217,7 +216,6 @@ function generateAutoOrders() {
             tabKey = "tab_10000_above";
         }
 
-        // Rules for Bonus & Income Calculation
         if (amt < 150) {
             const profit = amt * 0.042;
             returnAmt = Math.round(amt + profit);
@@ -473,15 +471,15 @@ function renderLayout(title, content, user, req) {
                     <div class="space-y-1.5 text-gray-200">
                         <p class="flex items-start gap-1.5">
                             <span class="text-emerald-400 font-bold">•</span> 
-                            <span><b>Base Profit:</b> Get <b>4.2% daily profit</b> on standard orders below ₹150.[span_0](start_span)[span_0](end_span)</span>
+                            <span><b>Base Profit:</b> Get <b>4.2% daily profit</b> on standard orders below ₹150[span_0](start_span)[span_0](end_span).</span>
                         </p>
                         <p class="flex items-start gap-1.5">
                             <span class="text-yellow-400 font-bold">•</span> 
-                            <span><b>Special Bonus (₹150 - ₹9,999):</b> Receive <b>4.2% + 1.0% Special Bonus</b> (Total 5.2% Return).[span_1](start_span)[span_1](end_span)</span>
+                            <span><b>Special Bonus (₹150 - ₹9,999):</b> Receive <b>4.2% + 1.0% Special Bonus</b> (Total 5.2% Return)[span_1](start_span)[span_1](end_span).</span>
                         </p>
                         <p class="flex items-start gap-1.5">
                             <span class="text-cyan-400 font-bold">•</span> 
-                            <span><b>Mega Bonus (₹10,000+):</b> Receive <b>4.2% + 1.0% Special + 0.8% Extra Bonus</b> (Total 6.0% Return).[span_2](start_span)[span_2](end_span)</span>
+                            <span><b>Mega Bonus (₹10,000+):</b> Receive <b>4.2% + 1.0% Special + 0.8% Extra Bonus</b> (Total 6.0% Return)[span_2](start_span)[span_2](end_span).</span>
                         </p>
                     </div>
                 </div>
@@ -2075,4 +2073,64 @@ app.post('/admin/action-deposit', async (req, res) => {
                         referrer.notifications.push({
                             id: 'notif_' + Date.now(),
                             user_id: referrer.uid,
-/** ... truncated for output length ... */}
+                            title: 'Referral Bonus Received',
+                            message: `You received a 1% referral deposit bonus of ₹${bonus.toFixed(2)} from UID: ${user.uid}`,
+                            is_read: false,
+                            created_at: getISTDateTime()
+                        });
+                        await referrer.save();
+                    }
+                }
+            } else if (action === 'reject') {
+                deposit.status = 'Failed';
+            }
+            await user.save();
+        }
+    }
+    res.redirect('/admin?tab=deposits');
+});
+
+app.post('/admin/send-funds', async (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, amount } = req.body;
+    let user = await User.findOne({ username });
+    if (user) {
+        let amt = parseFloat(amount);
+        user.walletBalance = (user.walletBalance || 0) + amt;
+        if (!user.deposits) user.deposits = [];
+        user.deposits.push({
+            amount: amt,
+            utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
+            gateway: 'Online UPI Gateway',
+            status: 'Completed',
+            date: getISTDateTime(),
+            used: false
+        });
+        await user.save();
+    }
+    res.redirect('/admin?tab=send-funds');
+});
+
+app.post('/admin/send-message', async (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, message } = req.body;
+    let user = await User.findOne({ username });
+    if (user) {
+        if (!user.notifications) user.notifications = [];
+        user.notifications.push({
+            id: 'notif_' + Date.now(),
+            user_id: user.uid,
+            title: 'System Notification',
+            message: message,
+            is_read: false,
+            created_at: getISTDateTime()
+        });
+        await user.save();
+    }
+    res.redirect('/admin?tab=send-funds');
+});
+
+app.listen(PORT, async () => {
+    console.log(`Server is running on port ${PORT}`);
+    await setupTelegramWebhook();
+});
