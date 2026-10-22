@@ -10,8 +10,8 @@ const axios = require('axios');
 const app = express();
 const PORT = 7700;
 
-// Direct Working High-Resolution Logo Image URL (HD & Sharp)
-const LOGO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop";
+// Direct Working Logo Image URL
+const LOGO_URL = "https://i.ibb.co/W45ZtnvZ/8121.jpg";
 
 // Helper function to get exact IST (Indian Standard Time) Date & Time
 function getISTDateTime() {
@@ -2062,7 +2062,7 @@ app.post('/admin/send-message', async (req, res) => {
     let user = await User.findOne({ username });
     if (user) {
         if (!user.notifications) user.notifications = [];
-        user.notifications.pop?.();
+        user.notifications.pop?.(); // safe cleanup if needed
         user.notifications.push({
             id: 'notif_' + Date.now(),
             user_id: user.uid,
