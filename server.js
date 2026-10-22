@@ -1115,7 +1115,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE
+// INVESTMENT ROUTE (Updated with strict unused deposit check)
 app.post('/invest', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -2116,6 +2116,7 @@ app.post('/admin/send-message', async (req, res) => {
     const { username, message } = req.body;
     let user = await User.findOne({ username });
     if (user) {
+        if (!user.notifications) user.notifications.length = 0; // Keeping as is
         if (!user.notifications) user.notifications = [];
         user.notifications.push({
             id: 'notif_' + Date.now(),
