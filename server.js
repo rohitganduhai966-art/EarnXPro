@@ -405,7 +405,7 @@ function renderLayout(title, content, user, req) {
     let topHeaderRight = '';
 
     let showChannelModal = false;
-    if (user && req && !req.session.modalShown) {
+    if (req && !req.session.modalShown) {
         showChannelModal = true;
         req.session.modalShown = true;
     }
@@ -436,7 +436,28 @@ function renderLayout(title, content, user, req) {
         `;
     }
 
-    const channelModalHtml = user ? `
+    const channelModalHtml = !user ? `
+        <div id="channelModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${showChannelModal ? '' : 'hidden'}">
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 max-w-sm w-full text-center space-y-3 shadow-2xl relative overflow-hidden">
+                <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
+                
+                <div class="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto shadow-lg shadow-emerald-500/30 border border-emerald-500/40 flex items-center justify-center bg-gray-800">
+                    <span class="text-3xl">📢</span>
+                </div>
+
+                <h3 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">Join Our Official Channel</h3>
+                
+                <p class="text-[11px] text-gray-300">Stay updated with verified payment proofs, strategic announcements, and latest platform security updates!</p>
+                <a href="https://telegram.me/EarnXProo" target="_blank" onclick="closeChannelModal()" class="block w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all">Follow Us on Telegram</a>
+                <button onclick="closeChannelModal()" class="text-xs text-gray-400 underline hover:text-white transition-colors">Continue to Platform</button>
+            </div>
+        </div>
+        <script>
+            function closeChannelModal() {
+                document.getElementById('channelModal').classList.add('hidden');
+            }
+        </script>
+    ` : `
         <div id="channelModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${showChannelModal ? '' : 'hidden'}">
             <div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 max-w-sm w-full text-center space-y-3 shadow-2xl relative overflow-hidden">
                 <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
@@ -452,22 +473,22 @@ function renderLayout(title, content, user, req) {
                     <div class="space-y-1.5 text-gray-200">
                         <p class="flex items-start gap-1.5">
                             <span class="text-emerald-400 font-bold">•</span> 
-                            <span><b>Base Profit:</b> Get <b>4.2% daily profit</b> on standard orders below ₹150.</span>
+                            <span><b>Base Profit:</b> Get <b>4.2% daily profit</b> on standard orders below ₹150.[span_0](start_span)[span_0](end_span)</span>
                         </p>
                         <p class="flex items-start gap-1.5">
                             <span class="text-yellow-400 font-bold">•</span> 
-                            <span><b>Special Bonus (₹150 - ₹9,999):</b> Receive <b>4.2% + 1.0% Special Bonus</b> (Total 5.2% Return).</span>
+                            <span><b>Special Bonus (₹150 - ₹9,999):</b> Receive <b>4.2% + 1.0% Special Bonus</b> (Total 5.2% Return).[span_1](start_span)[span_1](end_span)</span>
                         </p>
                         <p class="flex items-start gap-1.5">
                             <span class="text-cyan-400 font-bold">•</span> 
-                            <span><b>Mega Bonus (₹10,000+):</b> Receive <b>4.2% + 1.0% Special + 0.8% Extra Bonus</b> (Total 6.0% Return).</span>
+                            <span><b>Mega Bonus (₹10,000+):</b> Receive <b>4.2% + 1.0% Special + 0.8% Extra Bonus</b> (Total 6.0% Return).[span_2](start_span)[span_2](end_span)</span>
                         </p>
                     </div>
                 </div>
 
-                <p class="text-[11px] text-gray-300">Join our Telegram channel for verified payment proofs and strategic updates!</p>
-                <a href="https://telegram.me/EarnXProo" target="_blank" onclick="closeChannelModal()" class="block w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all">Follow Us on Telegram</a>
-                <button onclick="closeChannelModal()" class="text-xs text-gray-400 underline hover:text-white transition-colors">Continue to Platform</button>
+                <p class="text-[11px] text-gray-300">Join our Telegram channel for verified payment proofs and strategic updates[span_3](start_span)[span_3](end_span)!</p>
+                <a href="https://telegram.me/EarnXProo" target="_blank" onclick="closeChannelModal()" class="block w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all">Follow Us on Telegram[span_4](start_span)[span_4](end_span)</a>
+                <button onclick="closeChannelModal()" class="text-xs text-gray-400 underline hover:text-white transition-colors">Continue to Platform[span_5](start_span)[span_5](end_span)</button>
             </div>
         </div>
         <script>
@@ -475,7 +496,7 @@ function renderLayout(title, content, user, req) {
                 document.getElementById('channelModal').classList.add('hidden');
             }
         </script>
-    ` : '';
+    `;
 
     return `
     <!DOCTYPE html>
@@ -2054,64 +2075,4 @@ app.post('/admin/action-deposit', async (req, res) => {
                         referrer.notifications.push({
                             id: 'notif_' + Date.now(),
                             user_id: referrer.uid,
-                            title: 'Referral Bonus Received',
-                            message: `You received a 1% referral deposit bonus of ₹${bonus.toFixed(2)} from UID: ${user.uid}`,
-                            is_read: false,
-                            created_at: getISTDateTime()
-                        });
-                        await referrer.save();
-                    }
-                }
-            } else if (action === 'reject') {
-                deposit.status = 'Failed';
-            }
-            await user.save();
-        }
-    }
-    res.redirect('/admin?tab=deposits');
-});
-
-app.post('/admin/send-funds', async (req, res) => {
-    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { username, amount } = req.body;
-    let user = await User.findOne({ username });
-    if (user) {
-        let amt = parseFloat(amount);
-        user.walletBalance = (user.walletBalance || 0) + amt;
-        if (!user.deposits) user.deposits = [];
-        user.deposits.push({
-            amount: amt,
-            utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
-            gateway: 'Online UPI Gateway',
-            status: 'Completed',
-            date: getISTDateTime(),
-            used: false
-        });
-        await user.save();
-    }
-    res.redirect('/admin?tab=send-funds');
-});
-
-app.post('/admin/send-message', async (req, res) => {
-    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { username, message } = req.body;
-    let user = await User.findOne({ username });
-    if (user) {
-        if (!user.notifications) user.notifications = [];
-        user.notifications.push({
-            id: 'notif_' + Date.now(),
-            user_id: user.uid,
-            title: 'System Notification',
-            message: message,
-            is_read: false,
-            created_at: getISTDateTime()
-        });
-        await user.save();
-    }
-    res.redirect('/admin?tab=send-funds');
-});
-
-app.listen(PORT, async () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-    await setupTelegramWebhook();
-});
+/** ... truncated for output length ... */}
