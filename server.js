@@ -1,4 +1,3 @@
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const session = require('express-session');
@@ -32,7 +31,7 @@ function getISTDateTime() {
 const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
 mongoose.connect(MONGO_URI, {
-    serverSelectionTimeoutMS: 10000 // 10 seconds timeout taaki buffering error na aaye
+    serverSelectionTimeoutMS: 10000 
 })
 .then(async () => {
     console.log('MongoDB Connected Successfully');
@@ -72,7 +71,7 @@ const userSchema = new mongoose.Schema({
         productId: String,
         amount: Number,
         returnAmount: Number,
-        status: { type: String, default: 'Active' },
+        status: { type: String, default: 'Completed' },
         date: String
     }],
     notifications: [{
@@ -179,7 +178,7 @@ async function getRandomUpiId() {
     }
 }
 
-// Helper to generate dynamic automatic rotating orders covering exact 100-900 & all range sequences completely
+// Helper to generate dynamic automatic rotating orders
 function generateAutoOrders() {
     const presetAmounts = [
         100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900,
@@ -1051,6 +1050,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
+// INVESTMENT ROUTE (Deduct price, credit return amount instantly, mark completed)
 app.post('/invest', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -1086,7 +1086,9 @@ app.post('/invest', async (req, res) => {
     }
 
     if ((user.walletBalance || 0) >= pPrice) {
-        user.walletBalance -= pPrice;
+        // Deduct investment price and instantly add return amount to wallet balance
+        user.walletBalance = user.walletBalance - pPrice + pReturn;
+        
         if (!user.investments) user.investments = [];
 
         user.investments.push({
@@ -1094,7 +1096,7 @@ app.post('/invest', async (req, res) => {
             productId: productId,
             amount: pPrice,
             returnAmount: pReturn,
-            status: 'Active',
+            status: 'Completed', // Marked as Completed instantly
             date: getISTDateTime()
         });
         await user.save();
@@ -1174,6 +1176,7 @@ app.post('/api/notifications/mark-read', async (req, res) => {
     }
 });
 
+// ORDER HISTORY (Debited Investments with Completed status)
 app.get('/account/investments', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1182,22 +1185,23 @@ app.get('/account/investments', async (req, res) => {
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl border border-gray-800 text-sm flex justify-between items-center mb-3 shadow-2xl">
             <div>
                 <p class="font-bold text-blue-400 text-base">${inv.productName}</p>
-                <p class="text-gray-300 mt-1">Invested: ₹${inv.amount} | Return: ₹${inv.returnAmount}</p>
-                <p class="text-xs text-gray-400 mt-1">Status: <span class="${inv.status === 'Active' ? 'text-yellow-400 font-bold' : 'text-emerald-400 font-bold'}">${inv.status}</span></p>
+                <p class="text-red-400 font-semibold mt-1">Debited Amount: ₹${inv.amount}</p>
+                <p class="text-emerald-400 font-semibold mt-0.5">Credited Return: ₹${inv.returnAmount}</p>
+                <p class="text-xs text-gray-400 mt-1">Status: <span class="text-emerald-400 font-bold">${inv.status || 'Completed'}</span> | ${inv.date}</p>
             </div>
         </div>
     `).join('');
 
     const content = `
         <div class="space-y-4 max-w-lg mx-auto">
-            <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>📈</span> My Active Investments</h2>
+            <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>📈</span> My Order History (Completed)</h2>
             <div class="space-y-2">
-                ${myInvestmentsHtml.length ? myInvestmentsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No active investments found.</p>'}
+                ${myInvestmentsHtml.length ? myInvestmentsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No order history found.</p>'}
             </div>
             <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
         </div>
     `;
-    res.send(renderLayout('My Active Investments', content, req.session.user, req));
+    res.send(renderLayout('Order History', content, req.session.user, req));
 });
 
 app.get('/account/notifications', async (req, res) => {
@@ -1231,6 +1235,7 @@ app.get('/account/notifications', async (req, res) => {
     res.send(renderLayout('System Notifications', content, req.session.user, req));
 });
 
+// DEPOSIT HISTORY (Pure Deposits Only)
 app.get('/account/deposits', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1263,9 +1268,9 @@ app.get('/account/deposits', async (req, res) => {
 
     const content = `
         <div class="space-y-4 max-w-lg mx-auto">
-            <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📜</span> Deposit & Order History</h2>
+            <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📜</span> Deposit History</h2>
             <div class="space-y-2">
-                ${depositHistoryHtml.length ? depositHistoryHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No deposit or order history found.</p>'}
+                ${depositHistoryHtml.length ? depositHistoryHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No deposit history found.</p>'}
             </div>
             <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
         </div>
@@ -1315,7 +1320,7 @@ app.get('/account', async (req, res) => {
 
             <div class="space-y-3 mt-4 action-buttons-stack">
                 <a href="/account/investments" class="menu-link-btn">
-                    <span class="flex items-center gap-3"><span>📈</span> My Active Investments</span>
+                    <span class="flex items-center gap-3"><span>📈</span> My Order History (Completed)</span>
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
 
@@ -1328,7 +1333,7 @@ app.get('/account', async (req, res) => {
                 </a>
 
                 <a href="/account/deposits" class="menu-link-btn">
-                    <span class="flex items-center gap-3"><span>📜</span> View Deposit & Order History</span>
+                    <span class="flex items-center gap-3"><span>📜</span> View Deposit History</span>
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
             </div>
@@ -1621,7 +1626,7 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel with Balance Update (Plus/Minus supporting Order History)
+// Admin Panel
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
@@ -1765,7 +1770,7 @@ app.get('/admin', async (req, res) => {
 
     let activeTabContent = '';
     if (tab === 'users') {
-        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users (Manage Balance: +500 or -200)</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
     } else if (tab === 'deposits') {
         activeTabContent = `
             <div class="space-y-6">
@@ -1825,7 +1830,7 @@ app.get('/admin', async (req, res) => {
                             <label class="block text-xs font-semibold text-gray-300 mb-1">Amount (₹)</label>
                             <input type="number" name="amount" min="1" placeholder="Enter Amount" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-emerald-500">
                         </div>
-                        <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-green-500/20 transition-all">Send Balance (Adds to Deposit History)</button>
+                        <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-green-500/20 transition-all">Send Balance</button>
                     </form>
                 </div>
 
@@ -1909,7 +1914,6 @@ app.post('/admin/delete-product', async (req, res) => {
     res.redirect('/admin?tab=products');
 });
 
-// Admin Route to Increase or Decrease User Balance (Plus/Minus and log in deposit/order history)
 app.post('/admin/add-balance', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, amount } = req.body;
@@ -1918,15 +1922,16 @@ app.post('/admin/add-balance', async (req, res) => {
         let diff = parseFloat(amount);
         user.walletBalance = (user.walletBalance || 0) + diff;
         
-        if (!user.deposits) user.deposits = [];
-        let actionLabel = diff >= 0 ? 'ADMIN_CREDIT' : 'ADMIN_DEBIT';
-        user.deposits.push({
-            amount: Math.abs(diff),
-            utr: actionLabel + '_' + Math.floor(Math.random() * 900000 + 100000),
-            gateway: diff >= 0 ? 'Admin Balance Added (+)' : 'Admin Balance Deducted (-)',
-            status: 'Completed',
-            date: getISTDateTime()
-        });
+        if (diff > 0) {
+            if (!user.deposits) user.deposits = [];
+            user.deposits.push({
+                amount: diff,
+                utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
+                gateway: 'Online UPI Gateway',
+                status: 'Completed',
+                date: getISTDateTime()
+            });
+        }
 
         await user.save();
     }
@@ -1980,8 +1985,8 @@ app.post('/admin/send-funds', async (req, res) => {
         if (!user.deposits) user.deposits = [];
         user.deposits.push({
             amount: amt,
-            utr: 'SYSTEM_CREDIT_' + Math.floor(Math.random() * 900000 + 100000),
-            gateway: 'System Name',
+            utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
+            gateway: 'Online UPI Gateway',
             status: 'Completed',
             date: getISTDateTime()
         });
