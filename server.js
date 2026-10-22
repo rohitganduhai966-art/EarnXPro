@@ -29,12 +29,10 @@ const userSchema = new mongoose.Schema({
     rechargeBalance: { type: Number, default: 0 },
     withdrawBalance: { type: Number, default: 0 },
     is_admin: { type: Boolean, default: false },
-    bankDetails: {
-        name: { type: String, default: '' },
-        accNo: { type: String, default: '' },
-        ifsc: { type: String, default: '' },
-        phone: { type: String, default: '' }
-    },
+    savedUpiIds: [{
+        appName: String, // 'Google Pay', 'PhonePe', 'Paytm', 'MobiKwik'
+        upiId: String
+    }],
     deposits: [{
         amount: Number,
         utr: String,
@@ -45,7 +43,8 @@ const userSchema = new mongoose.Schema({
     }],
     withdrawals: [{
         amount: Number,
-        bankDetails: Object,
+        upiId: String,
+        appName: String,
         status: { type: String, default: 'Pending' },
         date: String
     }],
@@ -100,6 +99,28 @@ const Product = mongoose.model('Product', productSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
+// Strict UPI Official Handle Validation Function
+function validateOfficialUpi(upiId) {
+    upiId = upiId.trim().toLowerCase();
+    
+    const gpayHandles = ['okaxis', 'okicici', 'oksbi', 'okhdfcbank', 'gpay'];
+    const phonepeHandles = ['ybl', 'ibl', 'axl'];
+    const paytmHandles = ['paytm'];
+    const mobikwikHandles = ['mbk', 'ikwik', 'mbkns'];
+
+    const parts = upiId.split('@');
+    if (parts.length !== 2) return null;
+
+    const handle = parts[1];
+
+    if (gpayHandles.includes(handle)) return 'Google Pay';
+    if (phonepeHandles.includes(handle)) return 'PhonePe';
+    if (paytmHandles.includes(handle)) return 'Paytm';
+    if (mobikwikHandles.includes(handle)) return 'MobiKwik';
+
+    return null; // Third-party wallet / other apps blocked
+}
+
 // List of Rotating UPI IDs for Deposits
 const ROTATING_UPI_IDS = [
     'Rohit.m820@ptaxis',
@@ -133,7 +154,7 @@ async function ensureDefaultAdmin() {
                 rechargeBalance: 0,
                 withdrawBalance: 0,
                 is_admin: true,
-                bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
+                savedUpiIds: [],
                 deposits: [],
                 withdrawals: [],
                 investments: [],
@@ -415,58 +436,9 @@ function renderLayout(title, content, user, req) {
                 box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                 transition: transform 0.1s ease, filter 0.2s ease;
             }
-            .action-buttons-stack button:active, .action-buttons-stack a:active {
-                transform: scale(0.98);
-            }
             .deposit-btn { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; }
             .withdraw-btn { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
             .btn-support { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
-            .menu-link-btn {
-                background: linear-gradient(135deg, rgba(22, 27, 34, 0.9), rgba(15, 23, 42, 0.9));
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(56, 189, 248, 0.15);
-                color: #fff;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                padding: 15px 18px;
-                border-radius: 14px;
-                margin-bottom: 10px;
-                font-weight: 600;
-                font-size: 14px;
-                text-decoration: none;
-                transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            }
-            .menu-link-btn:hover {
-                background: linear-gradient(135deg, rgba(31, 36, 45, 0.95), rgba(30, 41, 59, 0.95));
-                border-color: rgba(56, 189, 248, 0.4);
-                transform: translateY(-1px);
-                box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-            }
-            .deposit-warning {
-                background: rgba(210, 153, 34, 0.1);
-                border: 1px solid rgba(210, 153, 34, 0.3);
-                border-left: 4px solid #d29922;
-                color: #f6ad55;
-                padding: 12px;
-                font-size: 12px;
-                border-radius: 8px;
-                margin-bottom: 16px;
-                line-height: 1.5;
-            }
-            .locked-bank-box {
-                background: rgba(22, 27, 34, 0.9);
-                border: 1px solid rgba(46, 160, 67, 0.5);
-                padding: 14px;
-                border-radius: 12px;
-                margin-bottom: 16px;
-            }
-            .lock-badge {
-                color: #2ea043;
-                font-size: 12px;
-                font-weight: 700;
-            }
             .withdrawal-history-card {
                 background: rgba(30, 34, 45, 0.85);
                 backdrop-filter: blur(10px);
@@ -497,15 +469,6 @@ function renderLayout(title, content, user, req) {
                 margin-top: 8px;
                 color: #9e9e9e;
                 font-size: 12px;
-            }
-            .history-date {
-                font-size: 11px;
-                color: #757575;
-                margin-top: 3px;
-            }
-            .status.completed {
-                color: #00e676;
-                font-weight: 700;
             }
         </style>
     </head>
@@ -757,7 +720,7 @@ app.post('/verify-signup-otp', async (req, res) => {
             rechargeBalance: 0,
             withdrawBalance: 0,
             is_admin: false,
-            bankDetails: { name: '', accNo: '', ifsc: '', phone: '' },
+            savedUpiIds: [],
             deposits: [],
             withdrawals: [],
             investments: [],
@@ -1179,8 +1142,8 @@ app.get('/account/withdrawals', async (req, res) => {
                     <span class="value">₹${fixedAmt}</span> 
                 </div>
                 <div class="history-meta">
-                    <small>Bank A/C: ${w.bankDetails ? w.bankDetails.accNo : 'N/A'}</small>
-                    <span class="status ${statusClass.includes('emerald') ? 'completed' : ''} ${statusClass}">${displayStatus}</span>
+                    <small>UPI: ${w.upiId || 'N/A'} (${w.appName || 'UPI'})</small>
+                    <span class="status ${statusClass}">${displayStatus}</span>
                 </div>
                 <div class="history-date">
                     <small>${w.date}</small>
@@ -1481,10 +1444,27 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     res.redirect('/deposit');
 });
 
-// Withdrawal Page
+// UPDATED WITHDRAWAL PAGE (ONLY OFFICIAL UPI IDs FOR GMAIL/G-PAY, PHONEPE, PAYTM, MOBIKWIK)
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
+
+    const savedUpis = user.savedUpiIds || [];
+    const totalSaved = savedUpis.length;
+
+    let upiOptionsHtml = savedUpis.map(u => `
+        <option value="${u.upiId}">[${u.appName}] ${u.upiId}</option>
+    `).join('');
+
+    let savedUpiListHtml = savedUpis.map(u => `
+        <div class="bg-gray-800/90 p-3 rounded-xl border border-gray-700 flex justify-between items-center text-xs">
+            <div>
+                <span class="font-bold text-emerald-400">[${u.appName}]</span>
+                <span class="text-gray-200 ml-1">${u.upiId}</span>
+            </div>
+            <span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30">Verified</span>
+        </div>
+    `).join('');
 
     let historyHtml = (user.withdrawals || []).map(w => {
         let fixedAmt = Math.round(w.amount * (1 - 0.12));
@@ -1498,8 +1478,8 @@ app.get('/withdrawal', async (req, res) => {
                     <span class="value">₹${fixedAmt}</span> 
                 </div>
                 <div class="history-meta">
-                    <small>Bank A/C: ${w.bankDetails ? w.bankDetails.accNo : 'N/A'}</small>
-                    <span class="status ${statusClass.includes('emerald') ? 'completed' : ''} ${statusClass}">${displayStatus}</span>
+                    <small>UPI: ${w.upiId || 'N/A'} (${w.appName || 'UPI'})</small>
+                    <span class="status ${statusClass}">${displayStatus}</span>
                 </div>
                 <div class="history-date">
                     <small>${w.date}</small>
@@ -1507,31 +1487,6 @@ app.get('/withdrawal', async (req, res) => {
             </div>
         `;
     }).join('');
-
-    const b = user.bankDetails || { name: '', accNo: '', ifsc: '', phone: '' };
-    const hasSavedBank = b.accNo && b.accNo.trim() !== '';
-
-    let bankSectionHTML = '';
-    if (hasSavedBank) {
-        bankSectionHTML = `
-            <div class="locked-bank-box">
-                <p><strong>Linked Bank Account (Verified & Locked)</strong></p>
-                <p class="text-xs text-gray-300 mt-1">Holder Name: ${b.name}</p>
-                <p class="text-xs text-gray-300">Account No: ****${b.accNo.slice(-4)}</p>
-                <p class="text-xs text-gray-300">IFSC Code: ${b.ifsc}</p>
-                <span class="lock-badge mt-2 inline-block">🔒 Permanent Account Bound</span>
-            </div>
-        `;
-    } else {
-        bankSectionHTML = `
-            <div class="bank-form space-y-2.5">
-                <input type="text" name="accName" placeholder="Account Holder Name" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                <input type="text" name="accNo" placeholder="Enter Bank Account Number" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                <input type="text" name="ifsc" placeholder="Enter IFSC Code" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                <input type="text" name="phone" placeholder="Telegram Username" value="${user.username}" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-            </div>
-        `;
-    }
 
     const content = `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4">
@@ -1542,22 +1497,45 @@ app.get('/withdrawal', async (req, res) => {
             </div>
 
             <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300">
-                <p class="font-bold mb-1">⚠ Withdrawal Tax Policy Notice:</p>
-                <p class="text-gray-300">A mandatory 12% tax fee will be applied to every withdrawal transaction processed through the platform. Please verify your payout details before submitting.</p>
+                ⚠️ <strong>Notice:</strong> Only Official UPI IDs of <b>Google Pay, PhonePe, Paytm & MobiKwik</b> are supported. 3rd-party wallet UPI IDs will be automatically rejected.
             </div>
 
-            <form id="withdrawalForm" class="space-y-3">
-                ${bankSectionHTML}
-                <div class="form-group pt-1">
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">Withdrawal Amount (₹)</label>
-                    <input type="number" id="withdrawalAmount" name="amount" min="100" max="50000" placeholder="Enter amount" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+            <!-- Add New UPI ID Form -->
+            ${totalSaved < 4 ? `
+                <div class="bg-gray-800/50 p-4 rounded-2xl border border-gray-700/80 space-y-3">
+                    <h3 class="text-xs font-bold text-cyan-400">➕ Add Official UPI ID (${totalSaved}/4 Added)</h3>
+                    <form action="/withdrawal/add-upi" method="POST" class="space-y-2.5">
+                        <input type="text" name="newUpiId" placeholder="e.g. yourname@okaxis, 9876543210@ybl, @paytm" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500">
+                        <p class="text-[10px] text-gray-400">Allowed: GPay (@okaxis, @oksbi), PhonePe (@ybl), Paytm (@paytm), MobiKwik (@mbk).</p>
+                        <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold p-2.5 rounded-xl text-xs shadow">Verify & Bind UPI</button>
+                    </form>
                 </div>
-                <div class="form-group">
-                    <label class="block text-xs font-semibold text-gray-400 mb-1">Confirm Signup Password</label>
-                    <input type="password" id="signupPassword" name="signupPasswordVerify" placeholder="Enter password created during signup" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+            ` : `<p class="text-xs text-emerald-400 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-bold">🔒 Maximum limit reached (4/4 Official UPI IDs Bound)</p>`}
+
+            ${savedUpis.length > 0 ? `
+                <div class="space-y-2">
+                    <h4 class="text-xs font-bold text-gray-300">Saved Official UPI IDs:</h4>
+                    <div class="space-y-1.5">${savedUpiListHtml}</div>
                 </div>
-                <button type="button" id="submitWithdrawalBtn" class="btn-submit w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold p-3 rounded-xl shadow-lg shadow-purple-500/20 transition-all text-sm">Submit Withdrawal / Save Bank</button>
-            </form>
+
+                <form action="/withdrawal/submit" method="POST" class="space-y-3 pt-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-400 mb-1">Select Bound UPI ID</label>
+                        <select name="selectedUpi" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                            ${upiOptionsHtml}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-400 mb-1">Withdrawal Amount (₹)</label>
+                        <input type="number" name="amount" min="100" max="50000" placeholder="Enter amount" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-400 mb-1">Confirm Signup Password</label>
+                        <input type="password" name="password" placeholder="Enter signup password" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold p-3 rounded-xl shadow text-xs">Submit Withdrawal Request</button>
+                </form>
+            ` : `<p class="text-xs text-yellow-400 text-center py-4 bg-gray-800/40 rounded-xl border border-gray-800">Please add at least 1 official UPI ID above to proceed with withdrawal.</p>`}
 
             <hr class="border-gray-800 my-4">
             <h3 class="font-bold text-sm text-gray-300">Withdrawal History</h3>
@@ -1567,140 +1545,76 @@ app.get('/withdrawal', async (req, res) => {
 
             <a href="/account" class="block text-center text-xs text-gray-400 mt-3 hover:text-white underline">Back to Account</a>
         </div>
-
-        <script>
-            document.getElementById('submitWithdrawalBtn').addEventListener('click', async () => {
-                const amount = document.getElementById('withdrawalAmount').value;
-                const password = document.getElementById('signupPassword').value;
-                const userId = '${user.uid}';
-
-                const accNameInput = document.querySelector('input[name="accName"]');
-                const accNoInput = document.querySelector('input[name="accNo"]');
-                const ifscInput = document.querySelector('input[name="ifsc"]');
-                const phoneInput = document.querySelector('input[name="phone"]');
-
-                const bodyData = {
-                    userId,
-                    amount,
-                    password,
-                    accName: accNameInput ? accNameInput.value : '',
-                    accNo: accNoInput ? accNoInput.value : '',
-                    ifsc: ifscInput ? ifscInput.value : '',
-                    phone: phoneInput ? phoneInput.value : ''
-                };
-
-                try {
-                    const response = await fetch('/api/withdrawal', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(bodyData)
-                    });
-                    
-                    const data = await response.json();
-                    
-                    if (data.success) {
-                        alert("Withdrawal has been submitted, please wait 24 hours to get the amount in your bank.");
-                        location.reload();
-                    } else {
-                        alert(data.message || "Error submitting withdrawal");
-                    }
-                } catch (err) {
-                    console.error(err);
-                }
-            });
-        </script>
     `;
     res.send(renderLayout('Withdraw', content, req.session.user, req));
 });
 
-app.post('/api/withdrawal', async (req, res) => {
-    try {
-        const { userId, amount, password, accName, accNo, ifsc, phone } = req.body;
-        let user = await User.findOne({ $or: [{ uid: userId }, { username: req.session.user?.username }] });
-        
-        if (!user || user.password !== password) {
-            return res.status(400).json({ success: false, message: "Incorrect signup password verification!" });
-        }
+// ROUTE TO ADD AND VALIDATE OFFICIAL UPI ID ONLY
+app.post('/withdrawal/add-upi', async (req, res) => {
+    if (!req.session.user) return res.redirect('/login');
+    const { newUpiId } = req.body;
+    let user = await User.findOne({ username: req.session.user.username });
 
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+    if (!user) return res.redirect('/login');
 
-        const dailyWithdrawalsCount = (user.withdrawals || []).filter(w => {
-            return new Date(w.date) >= todayStart;
-        }).length;
-
-        if (dailyWithdrawalsCount >= 2) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "Daily limit reached. You can only make a maximum of 2 withdrawal requests per day." 
-            });
-        }
-
-        let amtNum = parseFloat(amount);
-        if (!user.bankDetails || !user.bankDetails.accNo) {
-            if (accNo) {
-                user.bankDetails = { name: accName, accNo, ifsc, phone };
-            }
-        }
-
-        if ((user.withdrawBalance || 0) >= amtNum && amtNum >= 100 && amtNum <= 50000) {
-            user.withdrawBalance -= amtNum;
-            if (!user.withdrawals) user.withdrawals = [];
-            user.withdrawals.push({ 
-                amount: amtNum, 
-                bankDetails: user.bankDetails,
-                status: 'Pending', 
-                date: new Date().toLocaleString() 
-            });
-            await user.save();
-            
-            return res.status(200).json({
-                success: true,
-                message: "Withdrawal has been submitted, please wait 24 hours to get the amount in your bank."
-            });
-        } else {
-            return res.status(400).json({ success: false, message: "Invalid amount or insufficient withdraw balance!" });
-        }
-
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+    if ((user.savedUpiIds || []).length >= 4) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">You can only bind a maximum of 4 Official UPI IDs!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
+
+    const appName = validateOfficialUpi(newUpiId);
+    if (!appName) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UPI ID! Only Official Google Pay, PhonePe, Paytm & MobiKwik UPI IDs are supported.</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, user, req));
+    }
+
+    const exists = user.savedUpiIds.some(u => u.upiId.toLowerCase() === newUpiId.trim().toLowerCase());
+    if (exists) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">This UPI ID is already bound to your account!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
+    }
+
+    user.savedUpiIds.push({
+        appName: appName,
+        upiId: newUpiId.trim().toLowerCase()
+    });
+
+    await user.save();
+    res.redirect('/withdrawal');
 });
 
-app.post('/withdrawal', async (req, res) => {
+// SUBMIT WITHDRAWAL
+app.post('/withdrawal/submit', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
-    const { amount, accName, accNo, ifsc, phone, signupPasswordVerify } = req.body;
+    const { selectedUpi, amount, password } = req.body;
     let user = await User.findOne({ username: req.session.user.username });
-    
-    if (!user || user.password !== signupPasswordVerify) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Incorrect signup password verification!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+
+    if (!user || user.password !== password) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Incorrect signup password verification!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
 
-    let amtNum = parseFloat(amount);
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     const dailyCount = (user.withdrawals || []).filter(w => new Date(w.date) >= todayStart).length;
     if (dailyCount >= 2) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Daily limit reached. Max 2 withdrawal requests per day.</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Daily limit reached. Max 2 withdrawal requests per day.</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
 
-    if (!user.bankDetails || !user.bankDetails.accNo) {
-        if (accNo) {
-            user.bankDetails = { name: accName, accNo, ifsc, phone };
-        }
+    let amtNum = parseFloat(amount);
+    if ((user.withdrawBalance || 0) < amtNum || amtNum < 100 || amtNum > 50000) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid withdrawal amount or insufficient balance!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
 
-    if ((user.withdrawBalance || 0) >= amtNum && amtNum >= 100 && amtNum <= 50000) {
-        user.withdrawBalance -= amtNum;
-        if (!user.withdrawals) user.withdrawals = [];
-        user.withdrawals.push({ 
-            amount: amtNum, 
-            bankDetails: user.bankDetails,
-            status: 'Pending', 
-            date: new Date().toLocaleString() 
-        });
-        await user.save();
-    }
+    const targetUpiObj = user.savedUpiIds.find(u => u.upiId === selectedUpi);
+
+    user.withdrawBalance -= amtNum;
+    if (!user.withdrawals) user.withdrawals = [];
+    user.withdrawals.push({
+        amount: amtNum,
+        upiId: selectedUpi,
+        appName: targetUpiObj ? targetUpiObj.appName : 'UPI',
+        status: 'Pending',
+        date: new Date().toLocaleString()
+    });
+
+    await user.save();
     res.redirect('/withdrawal');
 });
 
@@ -1726,8 +1640,8 @@ app.get('/admin', async (req, res) => {
                 </form>
             </div>
             <div class="bg-gray-900/80 p-3 rounded-xl text-xs mt-2 text-gray-300 border border-gray-800">
-                <p class="text-blue-400 font-semibold mb-1">Bank Details:</p>
-                <p>Name: ${u.bankDetails?.name || 'N/A'} | A/C: ${u.bankDetails?.accNo || 'N/A'} | IFSC: ${u.bankDetails?.ifsc || 'N/A'}</p>
+                <p class="text-cyan-400 font-semibold mb-1">Bound Official UPI IDs:</p>
+                <p>${u.savedUpiIds && u.savedUpiIds.length ? u.savedUpiIds.map(x => `<b>${x.appName}:</b> ${x.upiId}`).join(' | ') : 'No UPI IDs bound yet'}</p>
                 <p class="text-gray-400 mt-1">Referrals: ${u.referralCount || 0}</p>
             </div>
         </div>
@@ -1775,7 +1689,7 @@ app.get('/admin', async (req, res) => {
                     <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
                         <div>
                             <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
-                            <p class="text-gray-300">Amt: ₹${w.amount} | A/C: <b class="text-purple-400">${w.bankDetails?.accNo}</b></p>
+                            <p class="text-gray-300">Amt: ₹${w.amount} | UPI: <b class="text-purple-400">${w.upiId} (${w.appName})</b></p>
                             <p class="text-xs text-gray-400 mt-1">${w.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
                         </div>
                         <div class="flex space-x-2">
