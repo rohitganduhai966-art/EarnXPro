@@ -154,7 +154,7 @@ async function detectFakeOrFraudPayment(utr, amount) {
         return { isFake: true, reason: "Invalid UTR format (Must be strictly 12 numeric digits)" };
     }
 
-    const existingUtr = await User.findOne({ "deposits.utr": utr });
+    const existingUtr = await User.findOne({ "deposits.utr": utr }, { _id: 1 }).lean();
     if (existingUtr) {
         return { isFake: true, reason: "Duplicate UTR detected (Already used in system)" };
     }
@@ -172,7 +172,7 @@ async function detectFakeOrFraudPayment(utr, amount) {
 // Dynamic Rotating UPI Fetcher from DB
 async function getRandomUpiId() {
     try {
-        let upis = await UpiConfig.find({});
+        let upis = await UpiConfig.find({}, { upiId: 1 }).lean();
         if (!upis || upis.length === 0) {
             return 'rubeena.rashid@ptyes';
         }
@@ -251,7 +251,7 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 
 async function ensureDefaultAdmin() {
     try {
-        const admin = await User.findOne({ is_admin: true });
+        const admin = await User.findOne({ is_admin: true }).lean();
         if (!admin) {
             await User.create({
                 uid: 'UID10001',
@@ -350,7 +350,7 @@ async function setupTelegramWebhook() {
 
 async function sendRealOTP(username, otp, callback) {
     try {
-        let chatIdRecord = await ChatId.findOne({ username: username.toLowerCase() });
+        let chatIdRecord = await ChatId.findOne({ username: username.toLowerCase() }, { chatId: 1 }).lean();
         let targetChatId = chatIdRecord ? chatIdRecord.chatId : null;
 
         if (!targetChatId) {
@@ -680,7 +680,7 @@ app.post('/login', async (req, res) => {
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
     
-    const user = await User.findOne({ username, password });
+    const user = await User.findOne({ username, password }).lean();
     if (user) {
         req.session.user = user;
         req.session.modalShown = false;
@@ -747,7 +747,7 @@ app.post('/send-signup-otp', async (req, res) => {
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    const existingUser = await User.findOne({ username });
+    const existingUser = await User.findOne({ username }, { _id: 1 }).lean();
     if (existingUser) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username already registered!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
@@ -783,7 +783,7 @@ app.post('/verify-signup-otp', async (req, res) => {
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    const record = await Otp.findOne({ username });
+    const record = await Otp.findOne({ username }).lean();
 
     if (record && record.type === 'signup' && record.otp === otp) {
         const uniqueUid = 'UID' + Math.floor(10000 + Math.random() * 90000);
@@ -850,7 +850,7 @@ app.post('/send-forgot-otp', async (req, res) => {
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    const user = await User.findOne({ username });
+    const user = await User.findOne({ username }, { _id: 1 }).lean();
     if (!user) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Telegram username not found!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Back</a>`, null, req));
     }
@@ -886,7 +886,7 @@ app.post('/verify-and-reset', async (req, res) => {
     username = username.trim().toLowerCase();
     if (!username.startsWith('@')) username = '@' + username;
 
-    const record = await Otp.findOne({ username });
+    const record = await Otp.findOne({ username }).lean();
 
     if (record && record.type === 'forgot' && record.otp === otp) {
         let user = await User.findOne({ username });
@@ -919,7 +919,7 @@ app.get('/daily-signin', async (req, res) => {
 
 app.get('/home', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { uid: 1, name: 1, username: 1, lastCheckInDate: 1 }).lean();
 
     const todayStr = new Date().toDateString();
     const alreadyCheckedIn = currentUser.lastCheckInDate === todayStr;
@@ -981,13 +981,17 @@ app.get('/home', async (req, res) => {
 // INVEST ROUTE
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
     
-    let dbProducts = await Product.find({});
+    // Optimized parallel execution using .lean()
+    const [currentUser, dbProducts, allUsers] = await Promise.all([
+        User.findOne({ username: req.session.user.username }, { investments: 1 }).lean(),
+        Product.find({}).lean(),
+        User.find({ "investments.status": { $in: ["Active", "Completed"] } }, { "investments.productId": 1 }).lean()
+    ]);
+
     let autoProducts = generateAutoOrders();
     let allProducts = [...dbProducts, ...autoProducts];
 
-    const allUsers = await User.find({ "investments.status": { $in: ["Active", "Completed"] } });
     const globallyTakenProductIds = new Set();
     allUsers.forEach(u => {
         (u.investments || []).forEach(inv => {
@@ -1125,7 +1129,7 @@ app.post('/invest', async (req, res) => {
     let pReturn = 0;
     let pName = "";
 
-    let product = await Product.findOne({ _id: productId });
+    let product = await Product.findOne({ _id: productId }, { price: 1, returnAmount: 1, name: 1 }).lean();
     if (product) {
         pPrice = product.price;
         pReturn = product.returnAmount;
@@ -1145,7 +1149,7 @@ app.post('/invest', async (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is order mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
-    const takenCheck = await User.findOne({ "investments.productId": productId });
+    const takenCheck = await User.findOne({ "investments.productId": productId }, { _id: 1 }).lean();
     if (takenCheck) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Ye order pehle hi kisi aur dwara liya ja chuka hai (Sold Out)! Kripya doosra order select karein.</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
@@ -1184,7 +1188,7 @@ app.post('/invest', async (req, res) => {
 
 app.get('/team', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { uid: 1, teamLevel: 1, referralCount: 1 }).lean();
 
     const referralLink = `https://earnxpro-1.onrender.com/signup?ref=${currentUser.uid}`;
 
@@ -1227,7 +1231,7 @@ app.get('/team', async (req, res) => {
 
 app.get('/api/notifications/count', async (req, res) => {
     if (!req.session.user) return res.status(401).json({ count: 0 });
-    let currentUser = await User.findOne({ username: req.session.user.username });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { notifications: 1 }).lean();
     if (!currentUser || !currentUser.notifications) return res.json({ count: 0 });
     
     const unreadCount = currentUser.notifications.filter(n => !n.is_read).length;
@@ -1255,7 +1259,7 @@ app.post('/api/notifications/mark-read', async (req, res) => {
 // ORDER HISTORY
 app.get('/account/investments', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { investments: 1 }).lean();
 
     let myInvestmentsHtml = (currentUser.investments || []).map(inv => `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl border border-gray-800 text-sm flex justify-between items-center mb-3 shadow-2xl">
@@ -1283,7 +1287,7 @@ app.get('/account/investments', async (req, res) => {
 // DEDUCTION HISTORY
 app.get('/account/deductions', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { deductions: 1 }).lean();
 
     let deductionsHtml = (currentUser.deductions || []).map(d => `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl border border-gray-800 text-sm flex justify-between items-center mb-3 shadow-2xl">
@@ -1340,7 +1344,7 @@ app.get('/account/notifications', async (req, res) => {
 // DEPOSIT HISTORY
 app.get('/account/deposits', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { deposits: 1 }).lean();
 
     let depositHistoryHtml = (currentUser.deposits || []).map(d => {
         let statusBadge = '';
@@ -1382,7 +1386,7 @@ app.get('/account/deposits', async (req, res) => {
 
 app.get('/account', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { uid: 1, name: 1, username: 1, walletBalance: 1, notifications: 1 }).lean();
     const unreadCountInitial = (currentUser.notifications || []).filter(n => !n.is_read).length;
 
     const content = `
@@ -1451,9 +1455,11 @@ app.get('/account', async (req, res) => {
 
 app.get('/deposit', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let user = await User.findOne({ username: req.session.user.username });
     
-    let assignedUpi = await getRandomUpiId();
+    const [user, assignedUpi] = await Promise.all([
+        User.findOne({ username: req.session.user.username }, { deposits: 1 }).lean(),
+        getRandomUpiId()
+    ]);
 
     let historyHtml = (user.deposits || []).map(d => {
         let statusColor = 'text-yellow-400';
@@ -1654,7 +1660,7 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
 
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let user = await User.findOne({ username: req.session.user.username });
+    let user = await User.findOne({ username: req.session.user.username }, { savedUpiIds: 1, walletBalance: 1 }).lean();
 
     const savedUpis = user.savedUpiIds || [];
     const totalSaved = savedUpis.length;
@@ -1734,15 +1740,19 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel
+// Admin Panel (Optimized with Promise.all and .lean())
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
 
-    let regularUsers = await User.find({ is_admin: { $ne: true } });
-    let products = await Product.find({});
+    const [regularUsers, products, dbUpis, allUsersWithDeposits] = await Promise.all([
+        User.find({ is_admin: { $ne: true } }).lean(),
+        Product.find({}).lean(),
+        UpiConfig.find({}).lean(),
+        User.find({ "deposits.status": { $in: ["Pending", "Fake / Suspicious"] } }).lean()
+    ]);
+
     let autoProducts = generateAutoOrders();
-    let dbUpis = await UpiConfig.find({});
 
     let usersHtml = regularUsers.map(u => `
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
@@ -1767,7 +1777,6 @@ app.get('/admin', async (req, res) => {
 
     let depositsHtml = [];
     let fakeDepositsHtml = [];
-    let allUsersWithDeposits = await User.find({ "deposits.status": { $in: ["Pending", "Fake / Suspicious"] } });
     
     allUsersWithDeposits.forEach(u => {
         u.deposits.forEach((d, dIdx) => {
@@ -1840,19 +1849,19 @@ app.get('/admin', async (req, res) => {
         </div>
     `).join('');
 
-    let productListHtml = [];
-    for (let p of products) {
-        let investorsList = [];
-        let allUsersForProduct = await User.find({ "investments.productId": p._id });
-        allUsersForProduct.forEach(u => {
-            u.investments.forEach(inv => {
-                if (inv.productId === p._id) {
-                    investorsList.push(`<span class="bg-gray-900 text-xs px-2.5 py-1 rounded-lg text-cyan-300 border border-gray-800 font-medium">UID: ${u.uid} (₹${inv.amount}) - ${inv.status}</span>`);
-                }
-            });
+    // Optimized batch fetch for investors to prevent loop latency
+    const allUsersWithInvestments = await User.find({ "investments.productId": { $exists: true, $ne: [] } }, { uid: 1, investments: 1 }).lean();
+    const productInvestorsMap = {};
+    allUsersWithInvestments.forEach(u => {
+        (u.investments || []).forEach(inv => {
+            if (!productInvestorsMap[inv.productId]) productInvestorsMap[inv.productId] = [];
+            productInvestorsMap[inv.productId].push(`<span class="bg-gray-900 text-xs px-2.5 py-1 rounded-lg text-cyan-300 border border-gray-800 font-medium">UID: ${u.uid} (₹${inv.amount}) - ${inv.status}</span>`);
         });
+    });
 
-        productListHtml.push(`
+    let productListHtml = products.map(p => {
+        let investorsList = productInvestorsMap[p._id] || [];
+        return `
             <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm space-y-2 border border-gray-700 shadow">
                 <div class="flex justify-between items-center">
                     <div>
@@ -1871,8 +1880,8 @@ app.get('/admin', async (req, res) => {
                     </div>
                 </div>
             </div>
-        `);
-    }
+        `;
+    });
 
     let userOptionsHtml = regularUsers.map(u => `<option value="${u.username}">UID: ${u.uid} (${u.username})</option>`).join('');
 
