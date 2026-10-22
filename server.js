@@ -1100,7 +1100,7 @@ app.post('/invest', async (req, res) => {
     );
 
     if (!matchingDeposit) {
-        return res.send(renderLayout('Alert', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-yellow-500/50 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-yellow-400">⚠️ Deposit Required</h2><p class="text-xs text-gray-300">Please make a new deposit of ₹${pPrice} to invest in this order!</p><a href="/deposit" class="inline-block bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg">Deposit Now</a></div>`, user, req));
+        return res.send(renderLayout('Alert', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-yellow-500/50 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-yellow-400">⚠️ Deposit Required</h2><p class="text-xs text-gray-300">You must make a new deposit of ₹${pPrice} to pick and invest in this order!</p><a href="/deposit" class="inline-block bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg">Deposit Now</a></div>`, user, req));
     }
 
     if ((user.walletBalance || 0) >= pPrice) {
@@ -2062,7 +2062,6 @@ app.post('/admin/send-message', async (req, res) => {
     let user = await User.findOne({ username });
     if (user) {
         if (!user.notifications) user.notifications = [];
-        user.notifications.pop?.(); // safe cleanup if needed
         user.notifications.push({
             id: 'notif_' + Date.now(),
             user_id: user.uid,
