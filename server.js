@@ -57,9 +57,9 @@ const userSchema = new mongoose.Schema({
         gateway: String,
         screenshotUrl: String,
         status: { type: String, default: 'Pending' }, 
-        date: String
+        date: String,
+        used: { type: Boolean, default: false } // Tracks if this deposit amount has been used for an investment
     }],
-    // Added dedicated deduction history array for minus balance transactions
     deductions: [{
         amount: Number,
         date: String
@@ -1057,7 +1057,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE (Deduct price, credit return amount instantly, mark completed)
+// INVESTMENT ROUTE (Deduct price, credit return amount instantly, mark completed & verify exact deposit match)
 app.post('/invest', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -1092,7 +1092,21 @@ app.post('/invest', async (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Ye order pehle hi kisi aur dwara liya ja chuka hai (Sold Out)! Kripya doosra order select karein.</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
+    // Check if user has an unused approved deposit matching exact pPrice
+    let matchingDeposit = (user.deposits || []).find(d => 
+        (d.status === 'Completed' || d.status === 'Approved') && 
+        d.amount === pPrice && 
+        !d.used
+    );
+
+    if (!matchingDeposit) {
+        return res.send(renderLayout('Alert', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-yellow-500/50 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-yellow-400">⚠️ Deposit Required</h2><p class="text-xs text-gray-300">You must make a new deposit of ₹${pPrice} to pick and invest in this order!</p><a href="/deposit" class="inline-block bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg">Deposit Now</a></div>`, user, req));
+    }
+
     if ((user.walletBalance || 0) >= pPrice) {
+        // Mark matching deposit as used so it cannot be reused for another order
+        matchingDeposit.used = true;
+
         // Deduct investment price and instantly add return amount to wallet balance
         user.walletBalance = user.walletBalance - pPrice + pReturn;
         
@@ -1570,7 +1584,8 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
             gateway: gateway || 'UPI',
             screenshotUrl: `/uploads/${req.file.filename}`,
             status: assignedStatus, 
-            date: getISTDateTime() 
+            date: getISTDateTime(),
+            used: false
         });
         await user.save();
     }
@@ -1960,7 +1975,6 @@ app.post('/admin/add-balance', async (req, res) => {
         let diff = parseFloat(amount);
         user.walletBalance = (user.walletBalance || 0) + diff;
         
-        // If amount is negative (deduction), record it in deductions history without any admin name
         if (diff < 0) {
             if (!user.deductions) user.deductions = [];
             user.deductions.push({
@@ -1974,7 +1988,8 @@ app.post('/admin/add-balance', async (req, res) => {
                 utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
                 gateway: 'Online UPI Gateway',
                 status: 'Completed',
-                date: getISTDateTime()
+                date: getISTDateTime(),
+                used: false
             });
         }
 
@@ -2033,7 +2048,8 @@ app.post('/admin/send-funds', async (req, res) => {
             utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
             gateway: 'Online UPI Gateway',
             status: 'Completed',
-            date: getISTDateTime()
+            date: getISTDateTime(),
+            used: false
         });
         await user.save();
     }
