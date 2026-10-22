@@ -160,19 +160,34 @@ function generateAutoOrders() {
         let bonusLabel = "";
         let category = "";
 
-        if (amt >= 100 && amt <= 999) {
-            category = "₹100 - ₹999 Category";
-            const profit = amt * 0.052; // 4.2% + 1% Special Bonus
-            returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special Bonus";
-        } else if (amt >= 1000 && amt <= 9999) {
-            category = "₹1,000 - ₹9,999 Category";
+        if (amt >= 100 && amt <= 900) {
+            category = "₹100 - ₹900 Section";
             const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
+        } else if (amt > 900 && amt <= 2000) {
+            category = "₹900 - ₹2000 Section";
+            const profit = amt * 0.052;
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "4.2% + 1% Special Bonus";
+        } else if (amt > 2000 && amt <= 5000) {
+            category = "₹2000 - ₹5000 Section";
+            const profit = amt * 0.052;
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "4.2% + 1% Special Bonus";
+        } else if (amt > 5000 && amt <= 9999) {
+            category = "₹5000 - ₹9999 Section";
+            const profit = amt * 0.052;
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "4.2% + 1% Special Bonus";
+        } else if (amt >= 10000 && amt <= 20000) {
+            category = "₹10000 - ₹20000 Section";
+            const profit = amt * 0.06;
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
         } else {
-            category = "₹10,000 - ₹50,000 Category";
-            const profit = amt * 0.06; // 4.2% + 1% Special + 0.8% Extra Bonus
+            category = "₹21000 - ₹50000 Section";
+            const profit = amt * 0.06;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
         }
@@ -900,7 +915,7 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page with Range Sections and Strict One-Time-Per-Order Global/User Investment Check
+// Invest Page with Exact 6 Range Sections and Strict One-Time-Per-Order Global/User Investment Check
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -918,20 +933,29 @@ app.get('/invest', async (req, res) => {
         });
     });
 
-    // Group products by range sections
+    // Group products by 6 exact range sections
     const sections = {
-        "₹100 - ₹999 Section": [],
-        "₹1,000 - ₹9,999 Section": [],
-        "₹10,000 - ₹50,000 Section": []
+        "₹100 - ₹900 Section": [],
+        "₹900 - ₹2000 Section": [],
+        "₹2000 - ₹5000 Section": [],
+        "₹5000 - ₹9999 Section": [],
+        "₹10000 - ₹20000 Section": [],
+        "₹21000 - ₹50000 Section": []
     };
 
     allProducts.forEach(p => {
-        if (p.price >= 100 && p.price <= 999) {
-            sections["₹100 - ₹999 Section"].push(p);
-        } else if (p.price >= 1000 && p.price <= 9999) {
-            sections["₹1,000 - ₹9,999 Section"].push(p);
+        if (p.price >= 100 && p.price <= 900) {
+            sections["₹100 - ₹900 Section"].push(p);
+        } else if (p.price > 900 && p.price <= 2000) {
+            sections["₹900 - ₹2000 Section"].push(p);
+        } else if (p.price > 2000 && p.price <= 5000) {
+            sections["₹2000 - ₹5000 Section"].push(p);
+        } else if (p.price > 5000 && p.price <= 9999) {
+            sections["₹5000 - ₹9999 Section"].push(p);
+        } else if (p.price >= 10000 && p.price <= 20000) {
+            sections["₹10000 - ₹20000 Section"].push(p);
         } else {
-            sections["₹10,000 - ₹50,000 Section"].push(p);
+            sections["₹21000 - ₹50000 Section"].push(p);
         }
     });
 
@@ -1479,7 +1503,7 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     res.redirect('/deposit');
 });
 
-// Withdrawal Page (Modified: Manual withdrawal payout form removed, only UPI binding allowed)
+// Withdrawal Page
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
