@@ -132,7 +132,7 @@ function validateOfficialUpi(upiId) {
     if (paytmHandles.includes(handle)) return 'Paytm';
     if (mobikwikHandles.includes(handle)) return 'MobiKwik';
 
-    return null; // Third-party wallet / other apps blocked
+    return null;
 }
 
 // List of Rotating UPI IDs for Deposits
@@ -150,40 +150,46 @@ function getRandomUpiId() {
     return ROTATING_UPI_IDS[randomIndex];
 }
 
-// Helper to generate dynamic automatic rotating orders (Max 3 minutes duration)
+// Helper to generate dynamic automatic rotating orders categorized by ranges with max 3 mins timer
 function generateAutoOrders() {
-    const presetAmounts = [200, 500, 1000, 2500, 5000, 8000, 12000, 20000, 35000, 50000];
+    const presetAmounts = [200, 500, 1200, 3500, 7500, 15000, 30000, 48000];
     const autoProducts = [];
 
-    // Shuffle amounts randomly
     const shuffledAmounts = presetAmounts.sort(() => Math.random() - 0.5);
 
     shuffledAmounts.forEach((amt, i) => {
         let returnAmt = 0;
         let bonusLabel = "";
+        let category = "";
 
-        if (amt < 10000) {
-            // 4.2% + 1% Special Bonus = 5.2% Total Profit
+        if (amt >= 100 && amt <= 999) {
+            category = "₹100 - ₹999 Category";
+            const profit = amt * 0.052; // 4.2% + 1% Special Bonus
+            returnAmt = Math.round(amt + profit);
+            bonusLabel = "4.2% + 1% Special Bonus";
+        } else if (amt >= 1000 && amt <= 9999) {
+            category = "₹1,000 - ₹9,999 Category";
             const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
         } else {
-            // 4.2% + 1% Special + 0.8% Extra Bonus = 6.0% Total Profit
-            const profit = amt * 0.06;
+            category = "₹10,000 - ₹50,000 Category";
+            const profit = amt * 0.06; // 4.2% + 1% Special + 0.8% Extra Bonus
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
         }
 
-        // Random timer between 1 to 3 minutes (Max 3 minutes)
+        // Max 3 minutes timer limit
         const durationMins = Math.floor(Math.random() * 3) + 1;
 
         autoProducts.push({
             _id: `auto_order_${amt}_${i}`,
-            name: `Auto Dynamic Pool #${100 + i}`,
+            name: `Live Dynamic Order #${500 + i}`,
             price: amt,
             returnAmount: returnAmt,
             durationMinutes: durationMins,
             bonusLabel: bonusLabel,
+            category: category,
             imageUrl: LOGO_URL
         });
     });
@@ -950,59 +956,95 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page (Combined Automatic Rotating System Orders + Manual Database Products)
+// Invest Page with Range Sections and Strict One-Time-Per-Order Global/User Investment Check
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
     
-    // Fetch DB Products + Generate Automatic Rotating System Orders (Max 3 Min timers)
     let dbProducts = await Product.find({});
     let autoProducts = generateAutoOrders();
+    let allProducts = [...dbProducts, ...autoProducts];
 
-    // Combine both and shuffle
-    let allProducts = [...dbProducts, ...autoProducts].sort(() => Math.random() - 0.5);
+    // Find all global investments across ALL users to prevent anyone else from investing in already taken/completed auto orders
+    const allUsers = await User.find({ "investments.status": { $in: ["Active", "Completed"] } });
+    const globallyTakenProductIds = new Set();
+    allUsers.forEach(u => {
+        (u.investments || []).forEach(inv => {
+            globallyTakenProductIds.add(inv.productId);
+        });
+    });
 
-    let productsHtml = allProducts.map((p, index) => {
-        const hasInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
+    // Group products by range sections
+    const sections = {
+        "₹100 - ₹999 Section": [],
+        "₹1,000 - ₹9,999 Section": [],
+        "₹10,000 - ₹50,000 Section": []
+    };
 
-        let bonusText = p.bonusLabel ? p.bonusLabel : (p.price < 10000 ? "4.2% + 1% Special Bonus" : "4.2% + 1% Special + 0.8% Extra Bonus");
-        
-        return `
-        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl">
-            ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-36 object-cover rounded-2xl mb-3 border border-gray-800">` : ''}
-            <div>
-                <div class="flex justify-between items-center">
-                    <h4 class="font-black text-lg text-emerald-400">${p.name}</h4>
-                    <span class="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold">⏱️ Max ${p.durationMinutes} Min</span>
+    allProducts.forEach(p => {
+        if (p.price >= 100 && p.price <= 999) {
+            sections["₹100 - ₹999 Section"].push(p);
+        } else if (p.price >= 1000 && p.price <= 9999) {
+            sections["₹1,000 - ₹9,999 Section"].push(p);
+        } else {
+            sections["₹10,000 - ₹50,000 Section"].push(p);
+        }
+    });
+
+    let sectionsHtml = "";
+
+    for (let [sectionName, productsList] of Object.entries(sections)) {
+        if (productsList.length === 0) continue;
+
+        let cardsHtml = productsList.map((p, index) => {
+            const hasUserInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
+            const isGloballyTaken = globallyTakenProductIds.has(p._id);
+            const isLocked = hasUserInvested || isGloballyTaken;
+
+            let bonusText = p.bonusLabel ? p.bonusLabel : (p.price < 10000 ? "4.2% + 1% Special Bonus" : "4.2% + 1% Special + 0.8% Extra Bonus");
+            
+            return `
+            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
+                ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-32 object-cover rounded-2xl mb-3 border border-gray-800">` : ''}
+                <div>
+                    <div class="flex justify-between items-center">
+                        <h4 class="font-black text-base text-emerald-400">${p.name}</h4>
+                        <span class="text-[10px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full border border-yellow-500/30 font-bold">⏱️ Max ${p.durationMinutes} Min</span>
+                    </div>
+                    <p class="text-[11px] text-cyan-300 font-semibold mt-1">🎁 ${bonusText}</p>
+                    <div class="flex justify-between items-center mt-3">
+                        <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
+                        <p class="text-sm text-yellow-400 font-bold">Return: ₹${p.returnAmount}</p>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Completion Time: ${p.durationMinutes} Minutes</p>
                 </div>
-                <p class="text-[11px] text-cyan-300 font-semibold mt-1">🎁 ${bonusText}</p>
-                <div class="flex justify-between items-center mt-3">
-                    <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
-                    <p class="text-sm text-yellow-400 font-bold">Total Return: ₹${p.returnAmount}</p>
-                </div>
-                <p class="text-xs text-gray-400 mt-1">Completion Time: ${p.durationMinutes} Minutes</p>
+                <form action="/invest" method="POST" class="mt-4">
+                    <input type="hidden" name="productId" value="${p._id}">
+                    <input type="hidden" name="productName" value="${p.name}">
+                    <input type="hidden" name="price" value="${p.price}">
+                    <input type="hidden" name="returnAmount" value="${p.returnAmount}">
+                    <input type="hidden" name="durationMinutes" value="${p.durationMinutes}">
+                    <button type="submit" class="w-full ${isLocked ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-sm transition-all" ${isLocked ? 'disabled' : ''}>${hasUserInvested ? 'Already Invested By You' : (isGloballyTaken ? 'Sold Out / Already Taken' : 'Invest Now')}</button>
+                </form>
             </div>
-            <form action="/invest" method="POST" class="mt-4">
-                <input type="hidden" name="productId" value="${p._id}">
-                <input type="hidden" name="productName" value="${p.name}">
-                <input type="hidden" name="price" value="${p.price}">
-                <input type="hidden" name="returnAmount" value="${p.returnAmount}">
-                <input type="hidden" name="durationMinutes" value="${p.durationMinutes}">
-                <button type="submit" id="investBtn_${index}" class="w-full ${hasInvested ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-sm transition-all" ${hasInvested ? 'disabled' : ''}>${hasInvested ? 'Already Invested' : 'Invest Now'}</button>
-            </form>
-        </div>
-    `;
-    }).join('');
+            `;
+        }).join('');
+
+        sectionsHtml += `
+            <div class="mb-6">
+                <h3 class="text-lg font-black text-yellow-400 mb-3 border-l-4 border-yellow-400 pl-3">${sectionName}</h3>
+                <div>${cardsHtml}</div>
+            </div>
+        `;
+    }
 
     const content = `
         <div class="space-y-6">
             <div class="flex justify-between items-center">
-                <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>📦</span> Automatic Live Orders</h2>
+                <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📈</span> Investment Sections</h2>
                 <button onclick="location.reload()" class="text-xs bg-blue-600/80 hover:bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold border border-blue-400/30 transition-all">🔄 Refresh Orders</button>
             </div>
-            <div class="grid grid-cols-1 gap-4">
-                ${productsHtml.length ? productsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No products available currently.</p>'}
-            </div>
+            ${sectionsHtml.length ? sectionsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No investment sections available currently.</p>'}
         </div>
     `;
     res.send(renderLayout('Invest', content, req.session.user, req));
@@ -1018,7 +1060,6 @@ app.post('/invest', async (req, res) => {
     let pDuration = 1;
     let pName = "";
 
-    // Check if product exists in MongoDB first
     let product = await Product.findOne({ _id: productId });
     if (product) {
         pPrice = product.price;
@@ -1026,7 +1067,6 @@ app.post('/invest', async (req, res) => {
         pDuration = product.durationMinutes;
         pName = product.name;
     } else {
-        // Fallback to Dynamic Auto Order payload parameters
         pPrice = parseFloat(price);
         pReturn = parseFloat(returnAmount);
         pDuration = parseInt(durationMinutes) || 3;
@@ -1037,16 +1077,22 @@ app.post('/invest', async (req, res) => {
         return res.redirect('/invest');
     }
 
+    // Strict One-Time User Investment Check
     const existingInvestment = (user.investments || []).some(inv => inv.productId === productId);
     if (existingInvestment) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is product mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is order mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
+    }
+
+    // Strict Global One-Time Check (Ensures no other user can invest in the same auto order item)
+    const takenCheck = await User.findOne({ "investments.productId": productId });
+    if (takenCheck) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Ye order pehle hi kisi aur dwara liya ja chuka hai (Sold Out)! Kripya doosra order select karein.</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
     if ((user.rechargeBalance || 0) >= pPrice) {
         user.rechargeBalance -= pPrice;
         if (!user.investments) user.investments = [];
         
-        // Enforce max 3 minutes timer limit for quick order completion
         const finalDuration = Math.min(pDuration, 3);
         const endTime = Date.now() + (finalDuration * 60 * 1000);
 
@@ -1703,13 +1749,14 @@ app.post('/withdrawal/submit', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel
+// Admin Panel with Auto Orders Management Tab
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
 
     let regularUsers = await User.find({ is_admin: { $ne: true } });
     let products = await Product.find({});
+    let autoProducts = generateAutoOrders();
 
     let usersHtml = regularUsers.map(u => `
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
@@ -1797,11 +1844,22 @@ app.get('/admin', async (req, res) => {
         });
     });
 
+    let autoOrdersHtml = autoProducts.map(ap => `
+        <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow flex justify-between items-center">
+            <div>
+                <p class="font-bold text-emerald-400">${ap.name} (${ap.category})</p>
+                <p class="text-gray-300 text-xs mt-1">Price: ₹${ap.price} | Return: ₹${ap.returnAmount} | Timer: ${ap.durationMinutes} Min</p>
+                <p class="text-xs text-cyan-300 mt-0.5">Bonus: ${ap.bonusLabel}</p>
+            </div>
+            <span class="text-xs bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-xl font-bold border border-emerald-500/30">Active Live Pool</span>
+        </div>
+    `).join('');
+
     let productListHtml = [];
     for (let p of products) {
         let investorsList = [];
-        let allUsers = await User.find({ "investments.productId": p._id });
-        allUsers.forEach(u => {
+        let allUsersForProduct = await User.find({ "investments.productId": p._id });
+        allUsersForProduct.forEach(u => {
             u.investments.forEach(inv => {
                 if (inv.productId === p._id) {
                     investorsList.push(`<span class="bg-gray-900 text-xs px-2.5 py-1 rounded-lg text-cyan-300 border border-gray-800 font-medium">UID: ${u.uid} (₹${inv.amount}) - ${inv.status}</span>`);
@@ -1840,6 +1898,8 @@ app.get('/admin', async (req, res) => {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-blue-400 mb-3 text-base">💰 Pending Deposit Requests</h3>${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending deposit requests.</p>'}</div>`;
     } else if (tab === 'withdrawals') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-purple-400 mb-3 text-base">💸 Pending Withdrawal Requests</h3>${withdrawalsHtml.length ? withdrawalsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending withdrawal requests.</p>'}</div>`;
+    } else if (tab === 'auto-orders') {
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-cyan-400 mb-3 text-base">⚡ Live Automatic Rotating Orders</h3><p class="text-xs text-gray-300 mb-3">Ye orders system automatically generate aur rotate karta hai har user ke liye max 3 minutes timer ke sath.</p>${autoOrdersHtml}</div>`;
     } else if (tab === 'products') {
         activeTabContent = `
             <div class="space-y-5">
@@ -1910,11 +1970,12 @@ app.get('/admin', async (req, res) => {
             <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>🛡</span> Admin Dashboard</h2>
             
             <div class="flex space-x-2 border-b border-gray-800 pb-3 overflow-x-auto text-xs">
-                <a href="/admin?tab=users" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
-                <a href="/admin?tab=deposits" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits</a>
-                <a href="/admin?tab=withdrawals" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'withdrawals' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Withdrawals</a>
-                <a href="/admin?tab=products" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
-                <a href="/admin?tab=send-funds" class="px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Funds & Msg</a>
+                <a href="/admin?tab=users" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
+                <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits</a>
+                <a href="/admin?tab=withdrawals" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'withdrawals' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Withdrawals</a>
+                <a href="/admin?tab=auto-orders" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'auto-orders' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Auto Orders</a>
+                <a href="/admin?tab=products" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
+                <a href="/admin?tab=send-funds" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-teal-600 text-white shadow-teal-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Funds & Msg</a>
             </div>
 
             <div class="bg-gray-900/90 backdrop-blur-xl p-5 rounded-2xl border border-gray-800 shadow-2xl">
@@ -1930,7 +1991,6 @@ app.post('/admin/add-product', async (req, res) => {
     const { name, price, returnAmount, durationValue, durationType, imageUrl } = req.body;
     
     let durationMinutes = parseInt(durationValue);
-    // Enforce max 3 minutes limit
     if (durationMinutes > 3) durationMinutes = 3;
 
     await Product.create({
