@@ -148,15 +148,21 @@ function getRandomUpiId() {
     return ROTATING_UPI_IDS[randomIndex];
 }
 
-// Helper to generate dynamic automatic rotating orders across all diverse ranges
+// Helper to generate dynamic automatic rotating orders covering exact 100-900 & all range sequences completely
 function generateAutoOrders() {
     const presetAmounts = [
-        150, 250, 350, 450, 650, 850,     // 100 - 900 section
-        1100, 1450, 1750, 1950,           // 900 - 2000 section
-        2200, 2800, 3600, 4500,           // 2000 - 5000 section
-        5500, 6800, 8200, 9500,           // 5000 - 9999 section
-        11000, 14500, 17800, 19900,       // 10000 - 20000 section
-        22000, 28500, 36000, 45000        // 21000 - 50000 section
+        // ₹100 - ₹900 Section (Includes 100, 200, 300, 400, 500, 600, 700, 800, 900 and intermediate amounts)
+        100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900,
+        // ₹900 - ₹2000 Section
+        950, 1000, 1200, 1400, 1500, 1700, 1900, 2000,
+        // ₹2000 - ₹5000 Section
+        2200, 2500, 2800, 3000, 3500, 4000, 4500, 5000,
+        // ₹5000 - ₹9999 Section
+        5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 9900,
+        // ₹10000 - ₹20000 Section
+        10000, 12000, 14000, 15000, 17000, 19000, 20000,
+        // ₹21000 - ₹50000 Section
+        22000, 25000, 30000, 35000, 40000, 45000, 50000
     ];
     
     const autoProducts = [];
