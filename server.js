@@ -915,7 +915,7 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page with Exact 6 Range Sections and Strict One-Time-Per-Order Global/User Investment Check
+// Invest Page with Collapsible/Tappable Section Cards for Exact 6 Ranges
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -959,10 +959,12 @@ app.get('/invest', async (req, res) => {
         }
     });
 
-    let sectionsHtml = "";
+    let sectionCardsHtml = "";
+    let sectionIdCounter = 0;
 
     for (let [sectionName, productsList] of Object.entries(sections)) {
-        if (productsList.length === 0) continue;
+        sectionIdCounter++;
+        let boxId = `sectionBox_${sectionIdCounter}`;
 
         let cardsHtml = productsList.map((p, index) => {
             const hasUserInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
@@ -972,7 +974,7 @@ app.get('/invest', async (req, res) => {
             let bonusText = p.bonusLabel ? p.bonusLabel : (p.price < 10000 ? "4.2% + 1% Special Bonus" : "4.2% + 1% Special + 0.8% Extra Bonus");
             
             return `
-            <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
+            <div class="bg-gradient-to-br from-gray-900/95 via-gray-900/90 to-slate-900/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
                 ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-32 object-cover rounded-2xl mb-3 border border-gray-800">` : ''}
                 <div>
                     <div class="flex justify-between items-center">
@@ -995,10 +997,15 @@ app.get('/invest', async (req, res) => {
             `;
         }).join('');
 
-        sectionsHtml += `
-            <div class="mb-6">
-                <h3 class="text-lg font-black text-yellow-400 mb-3 border-l-4 border-yellow-400 pl-3">${sectionName}</h3>
-                <div>${cardsHtml}</div>
+        sectionCardsHtml += `
+            <div class="mb-4 bg-gray-900/90 border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
+                <button onclick="toggleSection('${boxId}')" class="w-full p-4 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-950 hover:from-gray-800 hover:to-gray-900 transition-colors text-left">
+                    <span class="text-base font-black text-yellow-400 flex items-center gap-2"><span>📂</span> ${sectionName} (${productsList.length} Orders)</span>
+                    <span id="arrow_${boxId}" class="text-yellow-400 font-bold text-lg transition-transform">▼</span>
+                </button>
+                <div id="${boxId}" style="display: none;" class="p-4 border-t border-gray-800 bg-gray-950/60">
+                    ${cardsHtml.length ? cardsHtml : '<p class="text-gray-400 text-xs text-center py-6">No orders available in this section currently.</p>'}
+                </div>
             </div>
         `;
     }
@@ -1007,10 +1014,25 @@ app.get('/invest', async (req, res) => {
         <div class="space-y-6">
             <div class="flex justify-between items-center">
                 <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📈</span> Investment Sections</h2>
-                <button onclick="location.reload()" class="text-xs bg-blue-600/80 hover:bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold border border-blue-400/30 transition-all">🔄 Refresh Orders</button>
+                <button onclick="location.reload()" class="text-xs bg-blue-600/80 hover:bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold border border-blue-400/30 transition-all">🔄 Refresh</button>
             </div>
-            ${sectionsHtml.length ? sectionsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No investment sections available currently.</p>'}
+            <p class="text-xs text-gray-300">Kisi bhi section par tap karke uske andar ke available orders dekhein:</p>
+            <div>${sectionCardsHtml}</div>
         </div>
+
+        <script>
+            function toggleSection(boxId) {
+                const box = document.getElementById(boxId);
+                const arrow = document.getElementById('arrow_' + boxId);
+                if (box.style.display === 'none') {
+                    box.style.display = 'block';
+                    arrow.style.transform = 'rotate(180deg)';
+                } else {
+                    box.style.display = 'none';
+                    arrow.style.transform = 'rotate(0deg)';
+                }
+            }
+        </script>
     `;
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
