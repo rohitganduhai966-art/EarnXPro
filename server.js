@@ -938,6 +938,7 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
+// INVEST ROUTE (Red-circled top banner section removed)
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -965,7 +966,6 @@ app.get('/invest', async (req, res) => {
     };
 
     allProducts.forEach(p => {
-        // Add all products to Top Picks as well for convenience
         if (tabs["tab_top_picks"].products.length < 15) {
             tabs["tab_top_picks"].products.push(p);
         }
@@ -1005,8 +1005,6 @@ app.get('/invest', async (req, res) => {
             const isGloballyTaken = globallyTakenProductIds.has(p._id);
             const isLocked = hasUserInvested || isGloballyTaken;
 
-            let bonusText = p.bonusLabel ? p.bonusLabel : (p.price < 10000 ? "4.2% + 1% Special Bonus" : "4.2% + 1% Special + 0.8% Extra Bonus");
-            
             return `
             <div class="bg-gradient-to-br from-gray-900/95 via-gray-900/90 to-slate-900/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
                 <div>
@@ -1041,28 +1039,6 @@ app.get('/invest', async (req, res) => {
 
     const content = `
         <div class="space-y-4">
-            <div class="bg-gradient-to-br from-emerald-600 to-teal-700 p-5 rounded-3xl text-white shadow-2xl relative overflow-hidden">
-                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl"></div>
-                <div class="text-3xl font-black mb-3">4.2%</div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="bg-black/20 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
-                        <span class="text-[10px] text-gray-200 uppercase tracking-wider block font-semibold">Balance</span>
-                        <span class="text-lg font-black text-emerald-300">₹${(currentUser.walletBalance || 0).toFixed(2)}</span>
-                    </div>
-                    <div class="bg-black/20 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
-                        <span class="text-[10px] text-gray-200 uppercase tracking-wider block font-semibold">Reward</span>
-                        <span class="text-lg font-black text-yellow-300">₹${(currentUser.investments || []).reduce((acc, curr) => acc + (curr.returnAmount - curr.amount), 0).toFixed(2)}</span>
-                    </div>
-                </div>
-                <div class="mt-3 bg-black/20 backdrop-blur-md p-2.5 rounded-xl border border-white/10 text-center text-xs font-bold text-emerald-200">
-                    ✨ Special Reward is ON now (00:00 - 23:59)
-                </div>
-            </div>
-
-            <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-300 text-center font-medium">
-                ⚠️ Please use Freecharge or Mobikwik or Paytm or MoneyView wallet for payment!
-            </div>
-
             <div class="flex space-x-2 overflow-x-auto pb-2 scrollbar-none" id="tabsContainer">
                 ${tabButtonsHtml}
             </div>
