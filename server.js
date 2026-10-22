@@ -13,6 +13,20 @@ const PORT = 7700;
 // Direct Working Logo Image URL
 const LOGO_URL = "https://i.ibb.co/W45ZtnvZ/8121.jpg";
 
+// Helper function to get exact IST (Indian Standard Time) Date & Time
+function getISTDateTime() {
+    return new Date().toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour12: true,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
 // MongoDB Atlas Connection Setup
 const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
@@ -63,7 +77,7 @@ const userSchema = new mongoose.Schema({
         title: { type: String, default: 'System Notification' },
         message: String,
         is_read: { type: Boolean, default: false },
-        created_at: { type: String, default: () => new Date().toISOString() }
+        created_at: { type: String, default: () => getISTDateTime() }
     }],
     referredBy: { type: String, default: null },
     referralCount: { type: Number, default: 0 },
@@ -961,7 +975,7 @@ app.post('/invest', async (req, res) => {
             returnAmount: product.returnAmount,
             endTime: endTime,
             status: 'Active',
-            date: new Date().toLocaleString()
+            date: getISTDateTime()
         });
         await user.save();
     }
@@ -1079,7 +1093,7 @@ app.get('/account/notifications', async (req, res) => {
         <div class="border border-gray-800 bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl text-xs space-y-1.5 shadow-2xl">
             <div class="flex justify-between items-center text-cyan-400 font-bold text-sm">
                 <span>📢 ${n.title || 'System Notification'}</span>
-                <span class="text-[10px] text-gray-400">${n.created_at ? new Date(n.created_at).toLocaleString() : n.date}</span>
+                <span class="text-[10px] text-gray-400">${n.created_at}</span>
             </div>
             <p class="text-gray-200 leading-relaxed">${n.message}</p>
         </div>
@@ -1437,14 +1451,14 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
             gateway: gateway || 'UPI',
             screenshotUrl: `/uploads/${req.file.filename}`,
             status: 'Pending', 
-            date: new Date().toLocaleString() 
+            date: getISTDateTime() 
         });
         await user.save();
     }
     res.redirect('/deposit');
 });
 
-// UPDATED WITHDRAWAL PAGE (ONLY OFFICIAL UPI IDs FOR GMAIL/G-PAY, PHONEPE, PAYTM, MOBIKWIK)
+// Withdrawal Page
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -1549,7 +1563,7 @@ app.get('/withdrawal', async (req, res) => {
     res.send(renderLayout('Withdraw', content, req.session.user, req));
 });
 
-// ROUTE TO ADD AND VALIDATE OFFICIAL UPI ID ONLY
+// Route to Add & Validate Official UPI ID
 app.post('/withdrawal/add-upi', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { newUpiId } = req.body;
@@ -1580,7 +1594,7 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// SUBMIT WITHDRAWAL
+// Submit Withdrawal
 app.post('/withdrawal/submit', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { selectedUpi, amount, password } = req.body;
@@ -1611,7 +1625,7 @@ app.post('/withdrawal/submit', async (req, res) => {
         upiId: selectedUpi,
         appName: targetUpiObj ? targetUpiObj.appName : 'UPI',
         status: 'Pending',
-        date: new Date().toLocaleString()
+        date: getISTDateTime()
     });
 
     await user.save();
@@ -1641,7 +1655,7 @@ app.get('/admin', async (req, res) => {
             </div>
             <div class="bg-gray-900/80 p-3 rounded-xl text-xs mt-2 text-gray-300 border border-gray-800">
                 <p class="text-cyan-400 font-semibold mb-1">Bound Official UPI IDs:</p>
-                <p>${u.savedUpiIds && u.savedUpiIds.length ? u.savedUpiIds.map(x => `<b>${x.appName}:</b> ${x.upiId}`).join(' | ') : 'No UPI IDs bound yet'}</p>
+                <p>${u.savedUpiIds && u.savedUpiIds.length ? u.savedUpiIds.map(x => `<b>${x.appName}:</b>${x.upiId}`).join(' | ') : 'No UPI IDs bound yet'}</p>
                 <p class="text-gray-400 mt-1">Referrals: ${u.referralCount || 0}</p>
             </div>
         </div>
@@ -1902,7 +1916,7 @@ app.post('/admin/action-deposit', async (req, res) => {
                             title: 'Referral Bonus Received',
                             message: `You received a 1% referral deposit bonus of ₹${bonus.toFixed(2)} from UID: ${user.uid}`,
                             is_read: false,
-                            created_at: new Date().toISOString()
+                            created_at: getISTDateTime()
                         });
                         await referrer.save();
                     }
@@ -1948,7 +1962,7 @@ app.post('/admin/send-funds', async (req, res) => {
             utr: 'SYSTEM_CREDIT_' + Math.floor(Math.random() * 900000 + 100000),
             gateway: 'System Name',
             status: 'Completed',
-            date: new Date().toLocaleString()
+            date: getISTDateTime()
         });
         await user.save();
     }
@@ -1964,10 +1978,10 @@ app.post('/admin/send-message', async (req, res) => {
         user.notifications.push({
             id: 'notif_' + Date.now(),
             user_id: user.uid,
-            title: 'SystemNotification',
+            title: 'System Notification',
             message: message,
             is_read: false,
-            created_at: new Date().toISOString()
+            created_at: getISTDateTime()
         });
         await user.save();
     }
