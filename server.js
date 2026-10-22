@@ -470,36 +470,10 @@ function renderLayout(title, content, user, req) {
             .deposit-btn { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff; }
             .withdraw-btn { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
             .btn-support { background: linear-gradient(135deg, #d97706, #b45309); color: #fff; }
-            .withdrawal-history-card {
-                background: rgba(30, 34, 45, 0.85);
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(42, 46, 57, 0.9);
-                border-radius: 12px;
-                padding: 14px 16px;
-                margin-bottom: 12px;
-                color: #fff;
-                font-size: 13px;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            }
-            .history-row {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 4px;
-            }
-            .final-amount {
-                font-weight: 700;
-                border-top: 1px solid rgba(42, 46, 57, 0.8);
-                padding-top: 8px;
-                margin-top: 8px;
-                color: #00e676;
-            }
-            .history-meta {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-top: 8px;
-                color: #9e9e9e;
-                font-size: 12px;
+            .notification-message-box {
+                white-space: pre-line;
+                word-break: break-word;
+                line-height: 1.6;
             }
         </style>
     </head>
@@ -1180,12 +1154,12 @@ app.get('/account/notifications', async (req, res) => {
     }
 
     let notificationsHtml = (currentUser.notifications || []).map(n => `
-        <div class="border border-gray-800 bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl text-xs space-y-1.5 shadow-2xl">
+        <div class="border border-gray-800 bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl text-xs space-y-2 shadow-2xl">
             <div class="flex justify-between items-center text-cyan-400 font-bold text-sm">
                 <span>📢 ${n.title || 'System Notification'}</span>
                 <span class="text-[10px] text-gray-400">${n.created_at}</span>
             </div>
-            <p class="text-gray-200 leading-relaxed">${n.message}</p>
+            <p class="text-gray-200 leading-relaxed notification-message-box">${n.message}</p>
         </div>
     `).join('');
 
@@ -1228,43 +1202,6 @@ app.get('/account/deposits', async (req, res) => {
         </div>
     `;
     res.send(renderLayout('Deposit History', content, req.session.user, req));
-});
-
-app.get('/account/withdrawals', async (req, res) => {
-    if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username });
-
-    let withdrawHistoryHtml = (currentUser.withdrawals || []).map(w => {
-        let statusClass = (w.status === 'Approved' || w.status === 'Completed') ? 'text-emerald-400 font-bold' : ((w.status === 'Failed' || w.status === 'Rejected') ? 'text-red-400 font-bold' : 'text-yellow-400 font-bold');
-        let displayStatus = (w.status === 'Approved') ? 'Completed' : w.status;
-
-        return `
-            <div class="withdrawal-history-card">
-                <div class="history-row final-amount text-sm">
-                    <span class="label">Withdrawal Amount:</span>
-                    <span class="value">₹${w.amount}</span> 
-                </div>
-                <div class="history-meta">
-                    <small>UPI: ${w.upiId || 'N/A'} (${w.appName || 'UPI'})</small>
-                    <span class="status ${statusClass}">${displayStatus}</span>
-                </div>
-                <div class="history-date">
-                    <small>${w.date}</small>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    const content = `
-        <div class="space-y-4 max-w-lg mx-auto">
-            <h2 class="text-xl font-black text-purple-400 flex items-center gap-2"><span>📜</span> Withdrawal History</h2>
-            <div class="space-y-2">
-                ${withdrawHistoryHtml.length ? withdrawHistoryHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No withdrawal requests found.</p>'}
-            </div>
-            <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
-        </div>
-    `;
-    res.send(renderLayout('Withdrawal History', content, req.session.user, req));
 });
 
 // Account Page
@@ -1310,7 +1247,7 @@ app.get('/account', async (req, res) => {
 
             <div class="action-buttons-stack">
                 <a href="/deposit" class="deposit-btn">💰 Deposit Funds</a>
-                <a href="/withdrawal" class="withdraw-btn">💸 Withdraw Funds</a>
+                <a href="/withdrawal" class="withdraw-btn">💸 Bind UPI ID</a>
                 <a href="https://telegram.me/EarnXPro24x7Support" target="_blank" class="btn-support">🎧 Customer Care Support</a>
             </div>
 
@@ -1330,11 +1267,6 @@ app.get('/account', async (req, res) => {
 
                 <a href="/account/deposits" class="menu-link-btn">
                     <span class="flex items-center gap-3"><span>📜</span> View Deposit History</span>
-                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                </a>
-
-                <a href="/account/withdrawals" class="menu-link-btn">
-                    <span class="flex items-center gap-3"><span>📜</span> View Withdrawal History</span>
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
             </div>
@@ -1547,17 +1479,13 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     res.redirect('/deposit');
 });
 
-// Withdrawal Page
+// Withdrawal Page (Modified: Manual withdrawal payout form removed, only UPI binding allowed)
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
 
     const savedUpis = user.savedUpiIds || [];
     const totalSaved = savedUpis.length;
-
-    let upiOptionsHtml = savedUpis.map(u => `
-        <option value="${u.upiId}">[${u.appName}] ${u.upiId}</option>
-    `).join('');
 
     let savedUpiListHtml = savedUpis.map(u => `
         <div class="bg-gray-800/90 p-3 rounded-xl border border-gray-700 flex justify-between items-center text-xs">
@@ -1569,33 +1497,12 @@ app.get('/withdrawal', async (req, res) => {
         </div>
     `).join('');
 
-    let historyHtml = (user.withdrawals || []).map(w => {
-        let statusClass = (w.status === 'Approved' || w.status === 'Completed') ? 'text-emerald-400 font-bold' : ((w.status === 'Failed' || w.status === 'Rejected') ? 'text-red-400 font-bold' : 'text-yellow-400 font-bold');
-        let displayStatus = (w.status === 'Approved') ? 'Completed' : w.status;
-
-        return `
-            <div class="withdrawal-history-card">
-                <div class="history-row final-amount text-sm">
-                    <span class="label">Withdrawal Amount:</span>
-                    <span class="value">₹${w.amount}</span> 
-                </div>
-                <div class="history-meta">
-                    <small>UPI: ${w.upiId || 'N/A'} (${w.appName || 'UPI'})</small>
-                    <span class="status ${statusClass}">${displayStatus}</span>
-                </div>
-                <div class="history-date">
-                    <small>${w.date}</small>
-                </div>
-            </div>
-        `;
-    }).join('');
-
     const content = `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4">
-            <h2 class="text-xl font-black text-purple-400">Withdraw Funds (₹100 - ₹50,000 - Unlimited)</h2>
+            <h2 class="text-xl font-black text-purple-400">Manage Official UPI IDs</h2>
             
             <div class="bg-gray-800/80 p-3.5 rounded-xl text-xs text-emerald-400 font-bold border border-gray-700">
-                Available Withdraw Balance: ₹${(user.withdrawBalance || 0).toFixed(2)}
+                Withdraw Balance: ₹${(user.withdrawBalance || 0).toFixed(2)}
             </div>
 
             <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300">
@@ -1617,36 +1524,12 @@ app.get('/withdrawal', async (req, res) => {
                     <h4 class="text-xs font-bold text-gray-300">Saved Official UPI IDs:</h4>
                     <div class="space-y-1.5">${savedUpiListHtml}</div>
                 </div>
-
-                <form action="/withdrawal/submit" method="POST" class="space-y-3 pt-2">
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-400 mb-1">Select Bound UPI ID</label>
-                        <select name="selectedUpi" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                            ${upiOptionsHtml}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-400 mb-1">Withdrawal Amount (₹)</label>
-                        <input type="number" name="amount" min="100" max="50000" placeholder="Enter amount" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-gray-400 mb-1">Confirm Signup Password</label>
-                        <input type="password" name="password" placeholder="Enter signup password" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
-                    </div>
-                    <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold p-3 rounded-xl shadow text-xs">Submit Withdrawal Request</button>
-                </form>
-            ` : `<p class="text-xs text-yellow-400 text-center py-4 bg-gray-800/40 rounded-xl border border-gray-800">Please add at least 1 official UPI ID above to proceed with withdrawal.</p>`}
-
-            <hr class="border-gray-800 my-4">
-            <h3 class="font-bold text-sm text-gray-300">Withdrawal History</h3>
-            <div class="max-h-48 overflow-y-auto space-y-2">
-                ${historyHtml.length ? historyHtml : '<p class="text-xs text-gray-400 text-center py-4">No withdrawal requests found.</p>'}
-            </div>
+            ` : `<p class="text-xs text-yellow-400 text-center py-4 bg-gray-800/40 rounded-xl border border-gray-800">Please add at least 1 official UPI ID above.</p>`}
 
             <a href="/account" class="block text-center text-xs text-gray-400 mt-3 hover:text-white underline">Back to Account</a>
         </div>
     `;
-    res.send(renderLayout('Withdraw', content, req.session.user, req));
+    res.send(renderLayout('Bind UPI', content, req.session.user, req));
 });
 
 app.post('/withdrawal/add-upi', async (req, res) => {
@@ -1673,36 +1556,6 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     user.savedUpiIds.push({
         appName: appName,
         upiId: newUpiId.trim().toLowerCase()
-    });
-
-    await user.save();
-    res.redirect('/withdrawal');
-});
-
-app.post('/withdrawal/submit', async (req, res) => {
-    if (!req.session.user) return res.redirect('/login');
-    const { selectedUpi, amount, password } = req.body;
-    let user = await User.findOne({ username: req.session.user.username });
-
-    if (!user || user.password !== password) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Incorrect signup password verification!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
-    }
-
-    let amtNum = parseFloat(amount);
-    if ((user.withdrawBalance || 0) < amtNum || amtNum < 100 || amtNum > 50000) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid withdrawal amount or insufficient balance!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
-    }
-
-    const targetUpiObj = user.savedUpiIds.find(u => u.upiId === selectedUpi);
-
-    user.withdrawBalance -= amtNum;
-    if (!user.withdrawals) user.withdrawals = [];
-    user.withdrawals.push({
-        amount: amtNum,
-        upiId: selectedUpi,
-        appName: targetUpiObj ? targetUpiObj.appName : 'UPI',
-        status: 'Pending',
-        date: getISTDateTime()
     });
 
     await user.save();
@@ -1772,38 +1625,6 @@ app.get('/admin', async (req, res) => {
         });
     });
 
-    let withdrawalsHtml = [];
-    let allUsersWithWithdrawals = await User.find({ "withdrawals.status": "Pending" });
-    allUsersWithWithdrawals.forEach(u => {
-        u.withdrawals.forEach((w, wIdx) => {
-            if (w.status === 'Pending') {
-                withdrawalsHtml.push(`
-                    <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm flex justify-between items-center border border-gray-700 shadow">
-                        <div>
-                            <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
-                            <p class="text-gray-300">Amt: ₹${w.amount} | UPI: <b class="text-purple-400">${w.upiId} (${w.appName})</b></p>
-                            <p class="text-xs text-gray-400 mt-1">${w.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
-                        </div>
-                        <div class="flex space-x-2">
-                            <form action="/admin/action-withdrawal" method="POST">
-                                <input type="hidden" name="userId" value="${u._id}">
-                                <input type="hidden" name="index" value="${wIdx}">
-                                <input type="hidden" name="action" value="approve">
-                                <button type="submit" class="bg-purple-600 hover:bg-purple-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Approve</button>
-                            </form>
-                            <form action="/admin/action-withdrawal" method="POST">
-                                <input type="hidden" name="userId" value="${u._id}">
-                                <input type="hidden" name="index" value="${wIdx}">
-                                <input type="hidden" name="action" value="reject">
-                                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Reject</button>
-                            </form>
-                        </div>
-                    </div>
-                `);
-            }
-        });
-    });
-
     let autoOrdersHtml = autoProducts.map(ap => `
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow flex justify-between items-center">
             <div>
@@ -1856,8 +1677,6 @@ app.get('/admin', async (req, res) => {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
     } else if (tab === 'deposits') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-blue-400 mb-3 text-base">💰 Pending Deposit Requests</h3>${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending deposit requests.</p>'}</div>`;
-    } else if (tab === 'withdrawals') {
-        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-purple-400 mb-3 text-base">💸 Pending Withdrawal Requests</h3>${withdrawalsHtml.length ? withdrawalsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending withdrawal requests.</p>'}</div>`;
     } else if (tab === 'auto-orders') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-cyan-400 mb-3 text-base">⚡ Live Automatic Rotating Orders</h3><p class="text-xs text-gray-300 mb-3">Ye orders system automatically generate aur rotate karta hai har user ke liye.</p>${autoOrdersHtml}</div>`;
     } else if (tab === 'products') {
@@ -1907,8 +1726,8 @@ app.get('/admin', async (req, res) => {
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-gray-300 mb-1">Message Body</label>
-                            <textarea name="message" rows="3" placeholder="Type notification message here..." required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-cyan-500"></textarea>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Message Body (Supports Multi-line / Enter)</label>
+                            <textarea name="message" rows="5" placeholder="Type notification message here..." required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-cyan-500 whitespace-pre-line"></textarea>
                         </div>
                         <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-cyan-500/20 transition-all">Send System Notification</button>
                     </form>
@@ -1924,7 +1743,6 @@ app.get('/admin', async (req, res) => {
             <div class="flex space-x-2 border-b border-gray-800 pb-3 overflow-x-auto text-xs">
                 <a href="/admin?tab=users" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
                 <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits</a>
-                <a href="/admin?tab=withdrawals" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'withdrawals' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Withdrawals</a>
                 <a href="/admin?tab=auto-orders" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'auto-orders' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Auto Orders</a>
                 <a href="/admin?tab=products" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
                 <a href="/admin?tab=send-funds" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-teal-600 text-white shadow-teal-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Funds & Msg</a>
@@ -2007,25 +1825,6 @@ app.post('/admin/action-deposit', async (req, res) => {
     res.redirect('/admin?tab=deposits');
 });
 
-app.post('/admin/action-withdrawal', async (req, res) => {
-    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { userId, index, action } = req.body;
-    let user = await User.findById(userId);
-    if (user && user.withdrawals && user.withdrawals[index]) {
-        let withdrawal = user.withdrawals[index];
-        if (withdrawal.status === 'Pending') {
-            if (action === 'approve') {
-                withdrawal.status = 'Completed';
-            } else if (action === 'reject') {
-                withdrawal.status = 'Failed';
-                user.withdrawBalance = (user.withdrawBalance || 0) + withdrawal.amount;
-            }
-            await user.save();
-        }
-    }
-    res.redirect('/admin?tab=withdrawals');
-});
-
 app.post('/admin/send-funds', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, amount } = req.body;
@@ -2056,7 +1855,7 @@ app.post('/admin/send-message', async (req, res) => {
             id: 'notif_' + Date.now(),
             user_id: user.uid,
             title: 'System Notification',
-            message: message,
+            message: message, // Preserves newlines and formatting
             is_read: false,
             created_at: getISTDateTime()
         });
