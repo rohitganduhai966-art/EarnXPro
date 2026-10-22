@@ -10,7 +10,7 @@ const axios = require('axios');
 const app = express();
 const PORT = 7700;
 
-// Direct Working High-Resolution Logo Image URL (Clear & Sharp)
+// Direct Working High-Resolution Logo Image URL (High Quality & Clear)
 const LOGO_URL = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1000&auto=format&fit=crop";
 
 // Helper function to get exact IST (Indian Standard Time) Date & Time
