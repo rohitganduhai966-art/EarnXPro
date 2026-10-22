@@ -183,7 +183,7 @@ async function getRandomUpiId() {
     }
 }
 
-// Helper to generate dynamic automatic rotating orders (Updated Rules)
+// Helper to generate dynamic automatic rotating orders
 function generateAutoOrders() {
     const presetAmounts = [
         100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900,
@@ -217,7 +217,7 @@ function generateAutoOrders() {
             tabKey = "tab_10000_above";
         }
 
-        // Updated Rules for Bonus & Income Calculation
+        // Rules for Bonus & Income Calculation
         if (amt < 150) {
             // ₹150 se neeche ke orders par simple 4.2%
             const profit = amt * 0.042;
@@ -1006,8 +1006,13 @@ app.get('/invest', async (req, res) => {
             const isGloballyTaken = globallyTakenProductIds.has(p._id);
             const isLocked = hasUserInvested || isGloballyTaken;
 
-            // Condition to show/hide special bonus tag dynamically (Only if >= 150)
-            const showBonusTag = p.price >= 150;
+            // Calculate exact special bonus amount to show separately
+            let bonusAmount = 0;
+            if (p.price >= 150 && p.price < 10000) {
+                bonusAmount = Math.round(p.price * 0.01); // 1% Special Bonus
+            } else if (p.price >= 10000) {
+                bonusAmount = Math.round(p.price * 0.018); // 1% Special + 0.8% Extra Bonus
+            }
 
             return `
             <div class="bg-gradient-to-br from-gray-900/95 via-gray-900/90 to-slate-900/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
@@ -1019,9 +1024,9 @@ app.get('/invest', async (req, res) => {
                         <p class="text-xs text-gray-300">Amount: <b class="text-white text-sm">₹${p.price}</b></p>
                         <p class="text-xs text-yellow-400 font-bold">Income: +₹${Math.round(p.returnAmount - p.price)}</p>
                     </div>
-                    ${showBonusTag ? `
+                    ${bonusAmount > 0 ? `
                     <div class="mt-2 inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 text-[10px] px-2.5 py-1 rounded-lg border border-emerald-500/20 font-bold">
-                        🎁 Special Bonus Included
+                        🎁 +₹${bonusAmount} Special Bonus
                     </div>` : ''}
                 </div>
                 <form action="/invest" method="POST" class="mt-4">
