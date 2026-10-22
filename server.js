@@ -58,7 +58,7 @@ const userSchema = new mongoose.Schema({
         screenshotUrl: String,
         status: { type: String, default: 'Pending' }, 
         date: String,
-        used: { type: Boolean, default: false } // Tracks if this deposit amount has been used for an investment
+        used: { type: Boolean, default: false }
     }],
     deductions: [{
         amount: Number,
@@ -200,35 +200,35 @@ function generateAutoOrders() {
     shuffledAmounts.forEach((amt, i) => {
         let returnAmt = 0;
         let bonusLabel = "";
-        let category = "";
+        let tabKey = "";
 
-        if (amt >= 100 && amt <= 900) {
-            category = "₹100 - ₹900 Section";
+        if (amt >= 100 && amt <= 499) {
+            tabKey = "tab_100_499";
             const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
-        } else if (amt > 900 && amt <= 2000) {
-            category = "₹900 - ₹2000 Section";
+        } else if (amt >= 500 && amt <= 999) {
+            tabKey = "tab_500_999";
             const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
-        } else if (amt > 2000 && amt <= 5000) {
-            category = "₹2000 - ₹5000 Section";
+        } else if (amt >= 1000 && amt <= 1999) {
+            tabKey = "tab_1000_1999";
             const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
-        } else if (amt > 5000 && amt <= 9999) {
-            category = "₹5000 - ₹9999 Section";
+        } else if (amt >= 2000 && amt <= 4999) {
+            tabKey = "tab_2000_4999";
             const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
-        } else if (amt >= 10000 && amt <= 20000) {
-            category = "₹10000 - ₹20000 Section";
-            const profit = amt * 0.06;
+        } else if (amt >= 5000 && amt <= 9999) {
+            tabKey = "tab_5000_9999";
+            const profit = amt * 0.052;
             returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
+            bonusLabel = "4.2% + 1% Special Bonus";
         } else {
-            category = "₹21000 - ₹50000 Section";
+            tabKey = "tab_10000_above";
             const profit = amt * 0.06;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
@@ -240,7 +240,7 @@ function generateAutoOrders() {
             price: amt,
             returnAmount: returnAmt,
             bonusLabel: bonusLabel,
-            category: category,
+            tabKey: tabKey,
             imageUrl: LOGO_URL
         });
     });
@@ -954,39 +954,53 @@ app.get('/invest', async (req, res) => {
         });
     });
 
-    const sections = {
-        "₹100 - ₹900 Section": [],
-        "₹900 - ₹2000 Section": [],
-        "₹2000 - ₹5000 Section": [],
-        "₹5000 - ₹9999 Section": [],
-        "₹10000 - ₹20000 Section": [],
-        "₹21000 - ₹50000 Section": []
+    const tabs = {
+        "tab_top_picks": { name: "Top Picks", products: [] },
+        "tab_100_499": { name: "100-499", products: [] },
+        "tab_500_999": { name: "500-999", products: [] },
+        "tab_1000_1999": { name: "1000-1999", products: [] },
+        "tab_2000_4999": { name: "2000-4999", products: [] },
+        "tab_5000_9999": { name: "5000-9999", products: [] },
+        "tab_10000_above": { name: "10000+", products: [] }
     };
 
     allProducts.forEach(p => {
-        if (p.price >= 100 && p.price <= 900) {
-            sections["₹100 - ₹900 Section"].push(p);
-        } else if (p.price > 900 && p.price <= 2000) {
-            sections["₹900 - ₹2000 Section"].push(p);
-        } else if (p.price > 2000 && p.price <= 5000) {
-            sections["₹2000 - ₹5000 Section"].push(p);
-        } else if (p.price > 5000 && p.price <= 9999) {
-            sections["₹5000 - ₹9999 Section"].push(p);
-        } else if (p.price >= 10000 && p.price <= 20000) {
-            sections["₹10000 - ₹20000 Section"].push(p);
+        // Add all products to Top Picks as well for convenience
+        if (tabs["tab_top_picks"].products.length < 15) {
+            tabs["tab_top_picks"].products.push(p);
+        }
+
+        if (p.price >= 100 && p.price <= 499) {
+            tabs["tab_100_499"].products.push(p);
+        } else if (p.price >= 500 && p.price <= 999) {
+            tabs["tab_500_999"].products.push(p);
+        } else if (p.price >= 1000 && p.price <= 1999) {
+            tabs["tab_1000_1999"].products.push(p);
+        } else if (p.price >= 2000 && p.price <= 4999) {
+            tabs["tab_2000_4999"].products.push(p);
+        } else if (p.price >= 5000 && p.price <= 9999) {
+            tabs["tab_5000_9999"].products.push(p);
         } else {
-            sections["₹21000 - ₹50000 Section"].push(p);
+            tabs["tab_10000_above"].products.push(p);
         }
     });
 
-    let sectionCardsHtml = "";
-    let sectionIdCounter = 0;
+    let tabButtonsHtml = "";
+    let tabContentHtml = "";
+    let isFirst = true;
 
-    for (let [sectionName, productsList] of Object.entries(sections)) {
-        sectionIdCounter++;
-        let boxId = `sectionBox_${sectionIdCounter}`;
+    for (let [tabKey, tabData] of Object.entries(tabs)) {
+        let activeClass = isFirst ? "bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20" : "bg-gray-800/80 text-gray-300 font-semibold hover:bg-gray-700";
+        let displayStyle = isFirst ? "block" : "none";
+        isFirst = false;
 
-        let cardsHtml = productsList.map((p, index) => {
+        tabButtonsHtml += `
+            <button onclick="switchTab('${tabKey}')" id="btn_${tabKey}" class="tab-btn px-4 py-2 rounded-xl text-xs whitespace-nowrap transition-all border border-gray-700/50 ${activeClass}">
+                ${tabData.name}
+            </button>
+        `;
+
+        let cardsHtml = tabData.products.map(p => {
             const hasUserInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
             const isGloballyTaken = globallyTakenProductIds.has(p._id);
             const isLocked = hasUserInvested || isGloballyTaken;
@@ -995,15 +1009,16 @@ app.get('/invest', async (req, res) => {
             
             return `
             <div class="bg-gradient-to-br from-gray-900/95 via-gray-900/90 to-slate-900/95 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
-                ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-32 object-contain bg-gray-950/80 rounded-2xl mb-3 border border-gray-800">` : ''}
                 <div>
                     <div class="flex justify-between items-center">
-                        <h4 class="font-black text-base text-emerald-400">${p.name}</h4>
+                        <h4 class="font-black text-base text-emerald-400">INR</h4>
                     </div>
-                    <p class="text-[11px] text-cyan-300 font-semibold mt-1">🎁 ${bonusText}</p>
-                    <div class="flex justify-between items-center mt-3">
-                        <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
-                        <p class="text-sm text-yellow-400 font-bold">Return: ₹${p.returnAmount}</p>
+                    <div class="flex justify-between items-center mt-2">
+                        <p class="text-xs text-gray-300">Amount: <b class="text-white text-sm">₹${p.price}</b></p>
+                        <p class="text-xs text-yellow-400 font-bold">Income: +₹${Math.round(p.returnAmount - p.price)}</p>
+                    </div>
+                    <div class="mt-2 inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 text-[10px] px-2.5 py-1 rounded-lg border border-emerald-500/20 font-bold">
+                        🎁 +₹${Math.round((p.returnAmount - p.price) * 0.2)} Special
                     </div>
                 </div>
                 <form action="/invest" method="POST" class="mt-4">
@@ -1011,46 +1026,65 @@ app.get('/invest', async (req, res) => {
                     <input type="hidden" name="productName" value="${p.name}">
                     <input type="hidden" name="price" value="${p.price}">
                     <input type="hidden" name="returnAmount" value="${p.returnAmount}">
-                    <button type="submit" class="w-full ${isLocked ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-sm transition-all" ${isLocked ? 'disabled' : ''}>${hasUserInvested ? 'Already Invested By You' : (isGloballyTaken ? 'Sold Out / Already Taken' : 'Invest Now')}</button>
+                    <button type="submit" class="w-full ${isLocked ? 'bg-gray-800 text-gray-500 cursor-not-allowed border border-gray-700' : 'bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white shadow-lg shadow-green-500/20'} font-bold py-2.5 rounded-xl text-xs transition-all" ${isLocked ? 'disabled' : ''}>${hasUserInvested ? 'Claimed' : (isGloballyTaken ? 'Sold Out' : 'Claim')}</button>
                 </form>
             </div>
             `;
         }).join('');
 
-        sectionCardsHtml += `
-            <div class="mb-4 bg-gray-900/90 border border-gray-800 rounded-2xl overflow-hidden shadow-xl">
-                <button onclick="toggleSection('${boxId}')" class="w-full p-4 flex justify-between items-center bg-gradient-to-r from-gray-900 to-gray-950 hover:from-gray-800 hover:to-gray-900 transition-colors text-left cursor-pointer">
-                    <span class="text-base font-black text-yellow-400 flex items-center gap-2"><span>📂</span> ${sectionName} (${productsList.length} Orders)</span>
-                    <span id="arrow_${boxId}" class="text-yellow-400 font-bold text-lg transition-transform duration-200">▼</span>
-                </button>
-                <div id="${boxId}" style="display: none;" class="p-4 border-t border-gray-800 bg-gray-950/60">
-                    ${cardsHtml.length ? cardsHtml : '<p class="text-gray-400 text-xs text-center py-6">No orders available in this section currently.</p>'}
-                </div>
+        tabContentHtml += `
+            <div id="content_${tabKey}" class="tab-content-panel" style="display: ${displayStyle};">
+                ${cardsHtml.length ? cardsHtml : '<p class="text-gray-400 text-xs text-center py-12">No orders available in this section currently.</p>'}
             </div>
         `;
     }
 
     const content = `
-        <div class="space-y-6">
-            <div class="flex justify-between items-center">
-                <h2 class="text-xl font-black text-emerald-400 flex items-center gap-2"><span>📈</span> Investment Sections</h2>
-                <button onclick="location.reload()" class="text-xs bg-blue-600/80 hover:bg-blue-600 text-white px-3 py-1.5 rounded-xl font-bold border border-blue-400/30 transition-all">🔄 Refresh</button>
+        <div class="space-y-4">
+            <div class="bg-gradient-to-br from-emerald-600 to-teal-700 p-5 rounded-3xl text-white shadow-2xl relative overflow-hidden">
+                <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl"></div>
+                <div class="text-3xl font-black mb-3">4.2%</div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-black/20 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                        <span class="text-[10px] text-gray-200 uppercase tracking-wider block font-semibold">Balance</span>
+                        <span class="text-lg font-black text-emerald-300">₹${(currentUser.walletBalance || 0).toFixed(2)}</span>
+                    </div>
+                    <div class="bg-black/20 backdrop-blur-md p-3.5 rounded-2xl border border-white/10">
+                        <span class="text-[10px] text-gray-200 uppercase tracking-wider block font-semibold">Reward</span>
+                        <span class="text-lg font-black text-yellow-300">₹${(currentUser.investments || []).reduce((acc, curr) => acc + (curr.returnAmount - curr.amount), 0).toFixed(2)}</span>
+                    </div>
+                </div>
+                <div class="mt-3 bg-black/20 backdrop-blur-md p-2.5 rounded-xl border border-white/10 text-center text-xs font-bold text-emerald-200">
+                    ✨ Special Reward is ON now (00:00 - 23:59)
+                </div>
             </div>
-            <p class="text-xs text-gray-300">Kisi bhi section par tap karke uske andar ke available orders dekhein:</p>
-            <div>${sectionCardsHtml}</div>
+
+            <div class="bg-blue-500/10 border border-blue-500/30 p-3 rounded-xl text-xs text-blue-300 text-center font-medium">
+                ⚠️ Please use Freecharge or Mobikwik or Paytm or MoneyView wallet for payment!
+            </div>
+
+            <div class="flex space-x-2 overflow-x-auto pb-2 scrollbar-none" id="tabsContainer">
+                ${tabButtonsHtml}
+            </div>
+
+            <div class="mt-3">
+                ${tabContentHtml}
+            </div>
         </div>
 
         <script>
-            function toggleSection(boxId) {
-                const box = document.getElementById(boxId);
-                const arrow = document.getElementById('arrow_' + boxId);
-                if (box.style.display === 'none') {
-                    box.style.display = 'block';
-                    arrow.style.transform = 'rotate(180deg)';
-                } else {
-                    box.style.display = 'none';
-                    arrow.style.transform = 'rotate(0deg)';
-                }
+            function switchTab(tabKey) {
+                const panels = document.querySelectorAll('.tab-content-panel');
+                panels.forEach(p => p.style.display = 'none');
+
+                const buttons = document.querySelectorAll('.tab-btn');
+                buttons.forEach(b => {
+                    b.className = "tab-btn px-4 py-2 rounded-xl text-xs whitespace-nowrap transition-all border border-gray-700/50 bg-gray-800/80 text-gray-300 font-semibold hover:bg-gray-700";
+                });
+
+                document.getElementById('content_' + tabKey).style.display = 'block';
+                const activeBtn = document.getElementById('btn_' + tabKey);
+                activeBtn.className = "tab-btn px-4 py-2 rounded-xl text-xs whitespace-nowrap transition-all border border-gray-700/50 bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20";
             }
         </script>
     `;
@@ -1092,7 +1126,6 @@ app.post('/invest', async (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Ye order pehle hi kisi aur dwara liya ja chuka hai (Sold Out)! Kripya doosra order select karein.</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
-    // Check if user has an unused approved deposit matching exact pPrice
     let matchingDeposit = (user.deposits || []).find(d => 
         (d.status === 'Completed' || d.status === 'Approved') && 
         d.amount === pPrice && 
@@ -1104,10 +1137,8 @@ app.post('/invest', async (req, res) => {
     }
 
     if ((user.walletBalance || 0) >= pPrice) {
-        // Mark matching deposit as used so it cannot be reused for another order
         matchingDeposit.used = true;
 
-        // Deduct investment price and instantly add return amount to wallet balance
         user.walletBalance = user.walletBalance - pPrice + pReturn;
         
         if (!user.investments) user.investments = [];
@@ -1117,7 +1148,7 @@ app.post('/invest', async (req, res) => {
             productId: productId,
             amount: pPrice,
             returnAmount: pReturn,
-            status: 'Completed', // Marked as Completed instantly
+            status: 'Completed',
             date: getISTDateTime()
         });
         await user.save();
@@ -1767,7 +1798,7 @@ app.get('/admin', async (req, res) => {
     let autoOrdersHtml = autoProducts.map(ap => `
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow flex justify-between items-center">
             <div>
-                <p class="font-bold text-emerald-400">${ap.name} (${ap.category})</p>
+                <p class="font-bold text-emerald-400">${ap.name} (${ap.tabKey})</p>
                 <p class="text-gray-300 text-xs mt-1">Price: ₹${ap.price} | Return: ₹${ap.returnAmount}</p>
                 <p class="text-xs text-cyan-300 mt-0.5">Bonus: ${ap.bonusLabel}</p>
             </div>
