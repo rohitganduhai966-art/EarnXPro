@@ -44,7 +44,7 @@ const userSchema = new mongoose.Schema({
     withdrawBalance: { type: Number, default: 0 },
     is_admin: { type: Boolean, default: false },
     savedUpiIds: [{
-        appName: String, 
+        appName: String, // 'Google Pay', 'PhonePe', 'Paytm', 'MobiKwik'
         upiId: String
     }],
     deposits: [{
@@ -162,7 +162,7 @@ function generateAutoOrders() {
 
         if (amt >= 100 && amt <= 999) {
             category = "₹100 - ₹999 Category";
-            const profit = amt * 0.052; 
+            const profit = amt * 0.052; // 4.2% + 1% Special Bonus
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special Bonus";
         } else if (amt >= 1000 && amt <= 9999) {
@@ -172,7 +172,7 @@ function generateAutoOrders() {
             bonusLabel = "4.2% + 1% Special Bonus";
         } else {
             category = "₹10,000 - ₹50,000 Category";
-            const profit = amt * 0.06; 
+            const profit = amt * 0.06; // 4.2% + 1% Special + 0.8% Extra Bonus
             returnAmt = Math.round(amt + profit);
             bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
         }
@@ -260,17 +260,20 @@ app.post('/telegram-webhook', async (req, res) => {
                     { chatId },
                     { upsert: true, new: true }
                 );
+                console.log(`[WEBHOOK SUCCESS] Captured Chat ID ${chatId} for ${formattedUsername}`);
 
                 if (msg.text && msg.text.startsWith('/start')) {
                     axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
                         chat_id: chatId,
                         text: `*Welcome to EarnX Pro Official OTP Verification Bot!*\n\nYour account is now verified and linked with username *${formattedUsername}*. You will receive your OTPs here directly.`,
                         parse_mode: 'Markdown'
-                    }).catch(e => {});
+                    }).catch(e => console.error('[BOT AUTO REPLY ERROR]:', e.message));
                 }
             }
         }
-    } catch (err) {}
+    } catch (err) {
+        console.error('[WEBHOOK PROCESS ERROR]:', err.message);
+    }
     res.sendStatus(200);
 });
 
@@ -278,8 +281,11 @@ async function setupTelegramWebhook() {
     try {
         const webhookUrl = `${RENDER_DOMAIN}/telegram-webhook`;
         const setUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook?url=${webhookUrl}`;
-        await axios.get(setUrl);
-    } catch (err) {}
+        const response = await axios.get(setUrl);
+        console.log('[TELEGRAM WEBHOOK CONFIG]:', response.data.description || 'Webhook Configured');
+    } catch (err) {
+        console.error('[TELEGRAM WEBHOOK ERROR]:', err.message);
+    }
 }
 
 async function sendRealOTP(username, otp, callback) {
@@ -310,10 +316,13 @@ async function sendRealOTP(username, otp, callback) {
                         }
                     }
                 }
-            } catch (err) {}
+            } catch (err) {
+                console.error('[TELEGRAM GET UPDATES ERROR]:', err.message);
+            }
         }
 
         if (!targetChatId) {
+            console.log(`[TELEGRAM ERROR] Chat ID not found for ${username}. User must start bot @EarnXPro_09bot first.`);
             callback(false);
             return;
         }
@@ -326,8 +335,10 @@ async function sendRealOTP(username, otp, callback) {
             text: messageText,
             parse_mode: 'Markdown'
         });
+        console.log(`[TELEGRAM SENT] OTP ${otp} successfully sent to ${username} (Chat ID: ${targetChatId})`);
         callback(true);
     } catch (error) {
+        console.error('[TELEGRAM SEND ERROR]:', error.response?.data || error.message);
         callback(false);
     }
 }
@@ -536,6 +547,7 @@ app.get('/logout', (req, res) => {
     });
 });
 
+// Login Page with Remember Me Feature
 app.get('/login', (req, res) => {
     req.session.modalShown = false;
     const formHtml = `
@@ -621,6 +633,7 @@ app.post('/login', async (req, res) => {
     res.send(renderLayout('Login', `<p class="text-red-500 text-center font-bold">Invalid Username or Password</p><br><a href="/login" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
+// Signup
 app.get('/signup', (req, res) => {
     req.session.modalShown = false;
     const refCode = req.query.ref || '';
@@ -657,6 +670,9 @@ app.get('/signup', (req, res) => {
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 mb-1">Telegram Username</label>
                     <input type="text" name="username" placeholder="@yourusername" required class="w-full bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-green-500 transition-colors">
+                    <p class="text-[11px] text-yellow-400/90 mt-1.5 leading-relaxed">
+                        ⚠️ Please enter your Telegram username. The verification OTP will be sent directly to your Telegram chat via our Bot.
+                    </p>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-400 mb-1">Password</label>
@@ -752,6 +768,7 @@ app.post('/verify-signup-otp', async (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/signup" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
+// Forgot Password
 app.get('/forgot-password', (req, res) => {
     const formHtml = `
         <div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl shadow-2xl border border-gray-800 mt-10">
@@ -829,6 +846,7 @@ app.post('/verify-and-reset', async (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
+// Daily Check-In
 app.get('/daily-signin', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -846,6 +864,7 @@ app.get('/daily-signin', async (req, res) => {
     res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Recharge Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
 });
 
+// Home Page
 app.get('/home', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -853,8 +872,8 @@ app.get('/home', async (req, res) => {
     const todayStr = new Date().toDateString();
     const alreadyCheckedIn = currentUser.lastCheckInDate === todayStr;
 
-    const topic1Text = `EarnX Pro represents the absolute pinnacle of international financial technology, high-frequency digital liquidity engineering, and decentralized asset management ecosystems.`;
-    const topic2Text = `Security, absolute transparency, and ultra-low latency liquidity velocity form the unyielding triad upon which EarnX Pro's operational architecture is built.`;
+    const topic1Text = `EarnX Pro represents the absolute pinnacle of international financial technology, high-frequency digital liquidity engineering, and decentralized asset management ecosystems. Designed with elite institutional-grade infrastructure, our platform bridges the complex gap between modern retail participants and global capital markets. We deliver unprecedented operational velocity, unmatched algorithmic stability, and rigorous multi-layered cryptographic security protocols to safeguard every transaction and user portfolio worldwide.`;
+    const topic2Text = `Security, absolute transparency, and ultra-low latency liquidity velocity form the unyielding triad upon which EarnX Pro's operational architecture is built. Our proprietary risk management frameworks, continuous real-time market auditing, and dedicated compliance systems ensure an uncompromised trading environment. Empowering thousands of visionary participants globally, EarnX Pro continues to pioneer sustainable wealth creation and cutting-edge digital asset solutions tailored for the future of finance.`;
 
     const content = `
         <div class="space-y-6">
@@ -907,7 +926,7 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page without timers
+// Invest Page with Range Sections and Strict One-Time-Per-Order Global/User Investment Check
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -916,6 +935,7 @@ app.get('/invest', async (req, res) => {
     let autoProducts = generateAutoOrders();
     let allProducts = [...dbProducts, ...autoProducts];
 
+    // Find all global investments across ALL users to prevent anyone else from investing in already taken/completed auto orders
     const allUsers = await User.find({ "investments.status": { $in: ["Active", "Completed"] } });
     const globallyTakenProductIds = new Set();
     allUsers.forEach(u => {
@@ -924,6 +944,7 @@ app.get('/invest', async (req, res) => {
         });
     });
 
+    // Group products by range sections
     const sections = {
         "₹100 - ₹999 Section": [],
         "₹1,000 - ₹9,999 Section": [],
@@ -945,7 +966,7 @@ app.get('/invest', async (req, res) => {
     for (let [sectionName, productsList] of Object.entries(sections)) {
         if (productsList.length === 0) continue;
 
-        let cardsHtml = productsList.map((p) => {
+        let cardsHtml = productsList.map((p, index) => {
             const hasUserInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
             const isGloballyTaken = globallyTakenProductIds.has(p._id);
             const isLocked = hasUserInvested || isGloballyTaken;
@@ -956,7 +977,9 @@ app.get('/invest', async (req, res) => {
             <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl mb-4">
                 ${p.imageUrl ? `<img src="${p.imageUrl}" alt="Product" class="w-full h-32 object-cover rounded-2xl mb-3 border border-gray-800">` : ''}
                 <div>
-                    <h4 class="font-black text-base text-emerald-400">${p.name}</h4>
+                    <div class="flex justify-between items-center">
+                        <h4 class="font-black text-base text-emerald-400">${p.name}</h4>
+                    </div>
                     <p class="text-[11px] text-cyan-300 font-semibold mt-1">🎁 ${bonusText}</p>
                     <div class="flex justify-between items-center mt-3">
                         <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
@@ -1018,11 +1041,13 @@ app.post('/invest', async (req, res) => {
         return res.redirect('/invest');
     }
 
+    // Strict One-Time User Investment Check
     const existingInvestment = (user.investments || []).some(inv => inv.productId === productId);
     if (existingInvestment) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Aap is order mein pehle hi invest kar chuke hain. Dobara invest nahi kar sakte!</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
+    // Strict Global One-Time Check (Ensures no other user can invest in the same auto order item)
     const takenCheck = await User.findOne({ "investments.productId": productId });
     if (takenCheck) {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Ye order pehle hi kisi aur dwara liya ja chuka hai (Sold Out)! Kripya doosra order select karein.</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
@@ -1047,6 +1072,7 @@ app.post('/invest', async (req, res) => {
     res.redirect('/invest');
 });
 
+// Team Page
 app.get('/team', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1072,6 +1098,16 @@ app.get('/team', async (req, res) => {
                     <div class="bg-gray-800/80 p-3.5 rounded-xl border border-gray-700/50">
                         <p class="font-bold text-yellow-400">Team A (Level 1)</p>
                         <p class="text-gray-300 mt-0.5">Bonus: 1% on direct referrals' deposits.</p>
+                        <p class="text-gray-400 mt-1">Status: Active (Progress: ${currentUser.referralCount || 0}/25 to Team B)</p>
+                    </div>
+                    <div class="bg-gray-800/80 p-3.5 rounded-xl border border-gray-700/50">
+                        <p class="font-bold text-yellow-400">Team B (Level 2)</p>
+                        <p class="text-gray-300 mt-0.5">Bonus: 0.5% commission.</p>
+                        <p class="text-gray-400 mt-1">Requirement: 25 successful referrals with deposits in Team A, then 70 referrals to reach Team C.</p>
+                    </div>
+                    <div class="bg-gray-800/80 p-3.5 rounded-xl border border-gray-700/50">
+                        <p class="font-bold text-yellow-400">Team C (Level 3 - Unlimited)</p>
+                        <p class="text-gray-300 mt-0.5">Bonus: 0.10% commission on deposits. This is the final unlimited tier.</p>
                     </div>
                 </div>
             </div>
@@ -1080,6 +1116,34 @@ app.get('/team', async (req, res) => {
     res.send(renderLayout('Team', content, req.session.user, req));
 });
 
+app.get('/api/notifications/count', async (req, res) => {
+    if (!req.session.user) return res.status(401).json({ count: 0 });
+    let currentUser = await User.findOne({ username: req.session.user.username });
+    if (!currentUser || !currentUser.notifications) return res.json({ count: 0 });
+    
+    const unreadCount = currentUser.notifications.filter(n => !n.is_read).length;
+    res.json({ count: unreadCount });
+});
+
+app.post('/api/notifications/mark-read', async (req, res) => {
+    try {
+        if (!req.session.user) return res.status(401).json({ success: false, error: "Unauthorized" });
+        let user = await User.findOne({ username: req.session.user.username });
+
+        if (user && user.notifications) {
+            user.notifications.forEach(n => {
+                n.is_read = true;
+            });
+            await user.save();
+        }
+
+        res.status(200).json({ success: true, message: "Notifications marked as read." });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Account Menu Sub-pages
 app.get('/account/investments', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1096,14 +1160,14 @@ app.get('/account/investments', async (req, res) => {
 
     const content = `
         <div class="space-y-4 max-w-lg mx-auto">
-            <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>📈</span> My Investments</h2>
+            <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>📈</span> My Active Investments</h2>
             <div class="space-y-2">
-                ${myInvestmentsHtml.length ? myInvestmentsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No investments found.</p>'}
+                ${myInvestmentsHtml.length ? myInvestmentsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No active investments found.</p>'}
             </div>
             <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
         </div>
     `;
-    res.send(renderLayout('My Investments', content, req.session.user, req));
+    res.send(renderLayout('My Active Investments', content, req.session.user, req));
 });
 
 app.get('/account/notifications', async (req, res) => {
@@ -1203,6 +1267,7 @@ app.get('/account/withdrawals', async (req, res) => {
     res.send(renderLayout('Withdrawal History', content, req.session.user, req));
 });
 
+// Account Page
 app.get('/account', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
@@ -1251,7 +1316,7 @@ app.get('/account', async (req, res) => {
 
             <div class="space-y-3 mt-4 action-buttons-stack">
                 <a href="/account/investments" class="menu-link-btn">
-                    <span class="flex items-center gap-3"><span>📈</span> My Investments</span>
+                    <span class="flex items-center gap-3"><span>📈</span> My Active Investments</span>
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
 
@@ -1278,6 +1343,7 @@ app.get('/account', async (req, res) => {
     res.send(renderLayout('Account Dashboard', content, req.session.user, req));
 });
 
+// Deposit Page
 app.get('/deposit', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -1314,7 +1380,7 @@ app.get('/deposit', async (req, res) => {
             <h2 class="text-xl font-black text-emerald-400">Deposit Funds (₹100 - ₹50,000)</h2>
 
             <div class="deposit-warning">
-                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below.
+                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below. If you make a payment from any third-party wallet or unverified third-party app, your deposit will <strong>not</strong> be updated or credited to your recharge balance.
             </div>
             
             <div id="step-amount">
@@ -1393,12 +1459,24 @@ app.get('/deposit', async (req, res) => {
             function launchApp(app) {
                 const amt = document.getElementById('deposit_amount').value;
                 const upiId = '${assignedUpi}';
-                let targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                let targetUrl = '';
+
+                if (app === 'gpay') {
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                } else if (app === 'phonepe') {
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                } else if (app === 'paytm') {
+                    targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                } else if (app === 'mobikwik') {
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                }
+
                 window.location.href = targetUrl;
             }
 
             document.getElementById('submitProofBtn').addEventListener('click', async (e) => {
                 e.preventDefault();
+
                 const utrVal = document.getElementById('utrInput').value.trim();
                 const utrRegex = /^[0-9]{12}$/;
                 if (!utrRegex.test(utrVal)) {
@@ -1416,13 +1494,19 @@ app.get('/deposit', async (req, res) => {
                 formData.append('screenshot', document.getElementById('screenshotFile').files[0]);
 
                 try {
-                    const response = await fetch('/deposit', { method: 'POST', body: formData });
+                    const response = await fetch('/deposit', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
                     if(response.redirected) {
                         window.location.href = response.url;
                     } else {
                         window.location.reload();
                     }
-                } catch (err) {}
+                } catch (err) {
+                    console.error(err);
+                }
             });
         </script>
     `;
@@ -1435,12 +1519,12 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     
     const utrRegex = /^[0-9]{12}$/; 
     if (!utrRegex.test(utr)) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UTR!</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UTR! Please enter a valid 12-digit numeric reference number.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
 
     const existingUserWithUtr = await User.findOne({ "deposits.utr": utr });
     if (existingUserWithUtr) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">This UTR has already been submitted!</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">This UTR / Transaction ID has already been submitted! Please enter a unique UTR.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Back</a>`, req.session.user, req));
     }
 
     if (!req.file) {
@@ -1463,6 +1547,7 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     res.redirect('/deposit');
 });
 
+// Withdrawal Page
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -1470,7 +1555,10 @@ app.get('/withdrawal', async (req, res) => {
     const savedUpis = user.savedUpiIds || [];
     const totalSaved = savedUpis.length;
 
-    let upiOptionsHtml = savedUpis.map(u => `<option value="${u.upiId}">[${u.appName}] ${u.upiId}</option>`).join('');
+    let upiOptionsHtml = savedUpis.map(u => `
+        <option value="${u.upiId}">[${u.appName}] ${u.upiId}</option>
+    `).join('');
+
     let savedUpiListHtml = savedUpis.map(u => `
         <div class="bg-gray-800/90 p-3 rounded-xl border border-gray-700 flex justify-between items-center text-xs">
             <div>
@@ -1504,21 +1592,25 @@ app.get('/withdrawal', async (req, res) => {
 
     const content = `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4">
-            <h2 class="text-xl font-black text-purple-400">Withdraw Funds (₹100 - ₹50,000)</h2>
+            <h2 class="text-xl font-black text-purple-400">Withdraw Funds (₹100 - ₹50,000 - Unlimited)</h2>
             
             <div class="bg-gray-800/80 p-3.5 rounded-xl text-xs text-emerald-400 font-bold border border-gray-700">
                 Available Withdraw Balance: ₹${(user.withdrawBalance || 0).toFixed(2)}
+            </div>
+
+            <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300">
+                ⚠️ <strong>Notice:</strong> Only Official UPI IDs of <b>Google Pay, PhonePe, Paytm & MobiKwik</b> are supported.
             </div>
 
             ${totalSaved < 4 ? `
                 <div class="bg-gray-800/50 p-4 rounded-2xl border border-gray-700/80 space-y-3">
                     <h3 class="text-xs font-bold text-cyan-400">➕ Add Official UPI ID (${totalSaved}/4 Added)</h3>
                     <form action="/withdrawal/add-upi" method="POST" class="space-y-2.5">
-                        <input type="text" name="newUpiId" placeholder="e.g. yourname@okaxis" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500">
+                        <input type="text" name="newUpiId" placeholder="e.g. yourname@okaxis, 9876543210@ybl, @paytm" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500">
                         <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold p-2.5 rounded-xl text-xs shadow">Verify & Bind UPI</button>
                     </form>
                 </div>
-            ` : `<p class="text-xs text-emerald-400 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-bold">🔒 Maximum limit reached (4/4)</p>`}
+            ` : `<p class="text-xs text-emerald-400 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 text-center font-bold">🔒 Maximum limit reached (4/4 Official UPI IDs Bound)</p>`}
 
             ${savedUpis.length > 0 ? `
                 <div class="space-y-2">
@@ -1538,12 +1630,12 @@ app.get('/withdrawal', async (req, res) => {
                         <input type="number" name="amount" min="100" max="50000" placeholder="Enter amount" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-gray-400 mb-1">Confirm Password</label>
-                        <input type="password" name="password" placeholder="Enter password" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
+                        <label class="block text-xs font-semibold text-gray-400 mb-1">Confirm Signup Password</label>
+                        <input type="password" name="password" placeholder="Enter signup password" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-purple-500">
                     </div>
                     <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold p-3 rounded-xl shadow text-xs">Submit Withdrawal Request</button>
                 </form>
-            ` : `<p class="text-xs text-yellow-400 text-center py-4 bg-gray-800/40 rounded-xl border border-gray-800">Please add at least 1 official UPI ID above.</p>`}
+            ` : `<p class="text-xs text-yellow-400 text-center py-4 bg-gray-800/40 rounded-xl border border-gray-800">Please add at least 1 official UPI ID above to proceed with withdrawal.</p>`}
 
             <hr class="border-gray-800 my-4">
             <h3 class="font-bold text-sm text-gray-300">Withdrawal History</h3>
@@ -1565,15 +1657,24 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     if (!user) return res.redirect('/login');
 
     if ((user.savedUpiIds || []).length >= 4) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Max 4 UPI allowed!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">You can only bind a maximum of 4 Official UPI IDs!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
 
     const appName = validateOfficialUpi(newUpiId);
     if (!appName) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UPI ID! Only Google Pay, PhonePe, Paytm & MobiKwik supported.</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid UPI ID! Only Official Google Pay, PhonePe, Paytm & MobiKwik UPI IDs are supported.</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, user, req));
     }
 
-    user.savedUpiIds.push({ appName: appName, upiId: newUpiId.trim().toLowerCase() });
+    const exists = user.savedUpiIds.some(u => u.upiId.toLowerCase() === newUpiId.trim().toLowerCase());
+    if (exists) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">This UPI ID is already bound to your account!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
+    }
+
+    user.savedUpiIds.push({
+        appName: appName,
+        upiId: newUpiId.trim().toLowerCase()
+    });
+
     await user.save();
     res.redirect('/withdrawal');
 });
@@ -1584,12 +1685,12 @@ app.post('/withdrawal/submit', async (req, res) => {
     let user = await User.findOne({ username: req.session.user.username });
 
     if (!user || user.password !== password) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Incorrect password!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Incorrect signup password verification!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
 
     let amtNum = parseFloat(amount);
     if ((user.withdrawBalance || 0) < amtNum || amtNum < 100 || amtNum > 50000) {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid amount or balance!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid withdrawal amount or insufficient balance!</p><br><a href="/withdrawal" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
 
     const targetUpiObj = user.savedUpiIds.find(u => u.upiId === selectedUpi);
@@ -1608,7 +1709,7 @@ app.post('/withdrawal/submit', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel without timers
+// Admin Panel with Auto Orders Management Tab
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
@@ -1630,6 +1731,11 @@ app.get('/admin', async (req, res) => {
                     <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Update</button>
                 </form>
             </div>
+            <div class="bg-gray-900/80 p-3 rounded-xl text-xs mt-2 text-gray-300 border border-gray-800">
+                <p class="text-cyan-400 font-semibold mb-1">Bound Official UPI IDs:</p>
+                <p>${u.savedUpiIds && u.savedUpiIds.length ? u.savedUpiIds.map(x => `<b>${x.appName}:</b>${x.upiId}`).join(' | ') : 'No UPI IDs bound yet'}</p>
+                <p class="text-gray-400 mt-1">Referrals: ${u.referralCount || 0}</p>
+            </div>
         </div>
     `).join('');
 
@@ -1643,6 +1749,7 @@ app.get('/admin', async (req, res) => {
                         <div>
                             <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
                             <p class="text-gray-300">Amt: ₹${d.amount} | UTR: <b class="text-emerald-400">${d.utr}</b></p>
+                            <p class="text-xs text-gray-400 mt-1">${d.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
                             ${d.screenshotUrl ? `<a href="${d.screenshotUrl}" target="_blank" class="text-blue-400 underline text-xs font-bold inline-block mt-2">🔍 Open Screenshot</a>` : ''}
                         </div>
                         <div class="flex space-x-2">
@@ -1675,6 +1782,7 @@ app.get('/admin', async (req, res) => {
                         <div>
                             <p class="font-bold text-white">UID: ${u.uid} (${u.username})</p>
                             <p class="text-gray-300">Amt: ₹${w.amount} | UPI: <b class="text-purple-400">${w.upiId} (${w.appName})</b></p>
+                            <p class="text-xs text-gray-400 mt-1">${w.date} - Status: <span class="text-yellow-400 font-bold">Pending</span></p>
                         </div>
                         <div class="flex space-x-2">
                             <form action="/admin/action-withdrawal" method="POST">
@@ -1731,6 +1839,12 @@ app.get('/admin', async (req, res) => {
                         <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
                     </form>
                 </div>
+                <div class="border-t border-gray-700 pt-2.5">
+                    <p class="text-xs text-yellow-400 font-semibold mb-1.5">Investors (${investorsList.length}):</p>
+                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                        ${investorsList.length ? investorsList.join('') : '<span class="text-xs text-gray-400">No investors yet.</span>'}
+                    </div>
+                </div>
             </div>
         `);
     }
@@ -1741,11 +1855,11 @@ app.get('/admin', async (req, res) => {
     if (tab === 'users') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
     } else if (tab === 'deposits') {
-        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-blue-400 mb-3 text-base">💰 Pending Deposit Requests</h3>${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending deposits.</p>'}</div>`;
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-blue-400 mb-3 text-base">💰 Pending Deposit Requests</h3>${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending deposit requests.</p>'}</div>`;
     } else if (tab === 'withdrawals') {
-        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-purple-400 mb-3 text-base">💸 Pending Withdrawal Requests</h3>${withdrawalsHtml.length ? withdrawalsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending withdrawals.</p>'}</div>`;
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-purple-400 mb-3 text-base">💸 Pending Withdrawal Requests</h3>${withdrawalsHtml.length ? withdrawalsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending withdrawal requests.</p>'}</div>`;
     } else if (tab === 'auto-orders') {
-        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-cyan-400 mb-3 text-base">⚡ Live Automatic Rotating Orders</h3><p class="text-xs text-gray-300 mb-3">Ye orders system automatically generate aur rotate karta hai.</p>${autoOrdersHtml}</div>`;
+        activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-cyan-400 mb-3 text-base">⚡ Live Automatic Rotating Orders</h3><p class="text-xs text-gray-300 mb-3">Ye orders system automatically generate aur rotate karta hai har user ke liye.</p>${autoOrdersHtml}</div>`;
     } else if (tab === 'products') {
         activeTabContent = `
             <div class="space-y-5">
@@ -1755,7 +1869,7 @@ app.get('/admin', async (req, res) => {
                     <input type="number" name="price" placeholder="Product Price (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     <input type="number" name="returnAmount" placeholder="Return Income Amount (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     <input type="text" name="imageUrl" placeholder="Image URL (optional)" class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
-                    <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg">Add Custom Product</button>
+                    <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-yellow-500/20">Add Custom Product</button>
                 </form>
                 <h3 class="font-bold text-yellow-400 text-base mt-6">Custom Products List</h3>
                 <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml.join('') : '<p class="text-gray-400 text-sm text-center py-6">No custom products added.</p>'}</div>
@@ -1767,12 +1881,36 @@ app.get('/admin', async (req, res) => {
                 <div class="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-xl">
                     <h3 class="font-bold text-emerald-400 mb-3 text-base">💸 Send Direct Funds to User</h3>
                     <form action="/admin/send-funds" method="POST" class="space-y-3">
-                        <select name="username" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700">
-                            <option value="">-- Choose User --</option>
-                            ${userOptionsHtml}
-                        </select>
-                        <input type="number" name="amount" min="1" placeholder="Enter Amount" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700">
-                        <button type="submit" class="w-full bg-green-600 py-3 rounded-xl text-xs font-bold text-white shadow">Send Balance</button>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Select User</label>
+                            <select name="username" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-emerald-500">
+                                <option value="">-- Choose User --</option>
+                                ${userOptionsHtml}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Amount (₹)</label>
+                            <input type="number" name="amount" min="1" placeholder="Enter Amount" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-emerald-500">
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-green-500/20 transition-all">Send Balance (Adds to Deposit History)</button>
+                    </form>
+                </div>
+
+                <div class="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-xl">
+                    <h3 class="font-bold text-cyan-400 mb-3 text-base">📢 Send System Message / Notification</h3>
+                    <form action="/admin/send-message" method="POST" class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Select User</label>
+                            <select name="username" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-cyan-500">
+                                <option value="">-- Choose User --</option>
+                                ${userOptionsHtml}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Message Body</label>
+                            <textarea name="message" rows="3" placeholder="Type notification message here..." required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-cyan-500"></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-cyan-500/20 transition-all">Send System Notification</button>
                     </form>
                 </div>
             </div>
@@ -1784,15 +1922,15 @@ app.get('/admin', async (req, res) => {
             <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>🛡</span> Admin Dashboard</h2>
             
             <div class="flex space-x-2 border-b border-gray-800 pb-3 overflow-x-auto text-xs">
-                <a href="/admin?tab=users" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white' : 'bg-gray-800 text-gray-300'}">Users</a>
-                <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300'}">Deposits</a>
-                <a href="/admin?tab=withdrawals" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'withdrawals' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-300'}">Withdrawals</a>
-                <a href="/admin?tab=auto-orders" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'auto-orders' ? 'bg-cyan-600 text-white' : 'bg-gray-800 text-gray-300'}">Auto Orders</a>
-                <a href="/admin?tab=products" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white' : 'bg-gray-800 text-gray-300'}">Products</a>
-                <a href="/admin?tab=send-funds" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-teal-600 text-white' : 'bg-gray-800 text-gray-300'}">Funds</a>
+                <a href="/admin?tab=users" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
+                <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits</a>
+                <a href="/admin?tab=withdrawals" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'withdrawals' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Withdrawals</a>
+                <a href="/admin?tab=auto-orders" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'auto-orders' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Auto Orders</a>
+                <a href="/admin?tab=products" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
+                <a href="/admin?tab=send-funds" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-teal-600 text-white shadow-teal-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Funds & Msg</a>
             </div>
 
-            <div class="bg-gray-900/95 p-5 rounded-2xl border border-gray-800 shadow-2xl">
+            <div class="bg-gray-900/90 backdrop-blur-xl p-5 rounded-2xl border border-gray-800 shadow-2xl">
                 ${activeTabContent}
             </div>
         </div>
@@ -1842,6 +1980,24 @@ app.post('/admin/action-deposit', async (req, res) => {
             if (action === 'approve') {
                 deposit.status = 'Completed';
                 user.rechargeBalance = (user.rechargeBalance || 0) + deposit.amount;
+
+                if (user.referredBy) {
+                    let referrer = await User.findOne({ uid: user.referredBy });
+                    if (referrer) {
+                        let bonus = deposit.amount * 0.01;
+                        referrer.rechargeBalance = (referrer.rechargeBalance || 0) + bonus;
+                        if (!referrer.notifications) referrer.notifications = [];
+                        referrer.notifications.push({
+                            id: 'notif_' + Date.now(),
+                            user_id: referrer.uid,
+                            title: 'Referral Bonus Received',
+                            message: `You received a 1% referral deposit bonus of ₹${bonus.toFixed(2)} from UID: ${user.uid}`,
+                            is_read: false,
+                            created_at: getISTDateTime()
+                        });
+                        await referrer.save();
+                    }
+                }
             } else if (action === 'reject') {
                 deposit.status = 'Failed';
             }
@@ -1884,6 +2040,25 @@ app.post('/admin/send-funds', async (req, res) => {
             gateway: 'System Name',
             status: 'Completed',
             date: getISTDateTime()
+        });
+        await user.save();
+    }
+    res.redirect('/admin?tab=send-funds');
+});
+
+app.post('/admin/send-message', async (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, message } = req.body;
+    let user = await User.findOne({ username });
+    if (user) {
+        if (!user.notifications) user.notifications = [];
+        user.notifications.push({
+            id: 'notif_' + Date.now(),
+            user_id: user.uid,
+            title: 'System Notification',
+            message: message,
+            is_read: false,
+            created_at: getISTDateTime()
         });
         await user.save();
     }
