@@ -1115,7 +1115,7 @@ app.get('/invest', async (req, res) => {
     res.send(renderLayout('Invest', content, req.session.user, req));
 });
 
-// INVESTMENT ROUTE (Updated with strict unused deposit check)
+// INVESTMENT ROUTE
 app.post('/invest', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     let { productId, productName, price, returnAmount } = req.body;
@@ -2041,7 +2041,7 @@ app.post('/admin/add-balance', async (req, res) => {
             user.deposits.push({
                 amount: diff,
                 utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
-                gateway: 'Online UPI Gateway',
+                gateway: 'Admin Manual Deposit',
                 status: 'Completed',
                 date: getISTDateTime(),
                 used: false
@@ -2101,7 +2101,7 @@ app.post('/admin/send-funds', async (req, res) => {
         user.deposits.push({
             amount: amt,
             utr: 'DEP_' + Math.floor(Math.random() * 900000 + 100000),
-            gateway: 'Online UPI Gateway',
+            gateway: 'Admin Send Funds',
             status: 'Completed',
             date: getISTDateTime(),
             used: false
@@ -2116,7 +2116,6 @@ app.post('/admin/send-message', async (req, res) => {
     const { username, message } = req.body;
     let user = await User.findOne({ username });
     if (user) {
-        if (!user.notifications) user.notifications.length = 0; // Keeping as is
         if (!user.notifications) user.notifications = [];
         user.notifications.push({
             id: 'notif_' + Date.now(),
