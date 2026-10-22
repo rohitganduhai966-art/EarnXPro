@@ -40,8 +40,7 @@ const userSchema = new mongoose.Schema({
     username: { type: String, required: true, lowercase: true, trim: true },
     name: { type: String, default: '' },
     password: { type: String, required: true },
-    rechargeBalance: { type: Number, default: 0 },
-    withdrawBalance: { type: Number, default: 0 },
+    walletBalance: { type: Number, default: 0 },
     is_admin: { type: Boolean, default: false },
     savedUpiIds: [{
         appName: String, // 'Google Pay', 'PhonePe', 'Paytm', 'MobiKwik'
@@ -92,6 +91,10 @@ const productSchema = new mongoose.Schema({
     imageUrl: String
 });
 
+const upiConfigSchema = new mongoose.Schema({
+    upiId: { type: String, unique: true, required: true }
+});
+
 const otpSchema = new mongoose.Schema({
     username: { type: String, unique: true, lowercase: true, trim: true },
     otp: String,
@@ -108,6 +111,7 @@ const chatIdSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 const Product = mongoose.model('Product', productSchema);
+const UpiConfig = mongoose.model('UpiConfig', upiConfigSchema);
 const Otp = mongoose.model('Otp', otpSchema);
 const ChatId = mongoose.model('ChatId', chatIdSchema);
 
@@ -133,19 +137,19 @@ function validateOfficialUpi(upiId) {
     return null;
 }
 
-// List of Rotating UPI IDs for Deposits
-const ROTATING_UPI_IDS = [
-    'Rohit.m820@ptaxis',
-    '6377833820-2.wallet@phonepe',
-    '7071088675@mbk',
-    '7071088675@mbkns',
-    '7071088675-3@ybl',
-    'rubeena.rashid@ptyes'
-];
-
-function getRandomUpiId() {
-    const randomIndex = Math.floor(Math.random() * ROTATING_UPI_IDS.length);
-    return ROTATING_UPI_IDS[randomIndex];
+// Dynamic Rotating UPI Fetcher from DB
+async function getRandomUpiId() {
+    try {
+        let upis = await UpiConfig.find({});
+        if (!upis || upis.length === 0) {
+            // Default fallback if database is empty
+            return 'rubeena.rashid@ptyes';
+        }
+        const randomIndex = Math.floor(Math.random() * upis.length);
+        return upis[randomIndex].upiId;
+    } catch (err) {
+        return 'rubeena.rashid@ptyes';
+    }
 }
 
 // Helper to generate dynamic automatic rotating orders covering exact 100-900 & all range sequences completely
@@ -234,8 +238,7 @@ async function ensureDefaultAdmin() {
                 username: '@7071088675',
                 name: 'Admin',
                 password: 'Faraz78678678690786',
-                rechargeBalance: 0,
-                withdrawBalance: 0,
+                walletBalance: 0,
                 is_admin: true,
                 savedUpiIds: [],
                 deposits: [],
@@ -248,6 +251,23 @@ async function ensureDefaultAdmin() {
                 lastCheckInDate: null
             });
             console.log('[MONGODB] Default Admin created successfully.');
+        }
+
+        // Seed default UPIs if empty
+        const countUpi = await UpiConfig.countDocuments({});
+        if (countUpi === 0) {
+            const defaultUpis = [
+                'Rohit.m820@ptaxis',
+                '6377833820-2.wallet@phonepe',
+                '7071088675@mbk',
+                '7071088675@mbkns',
+                '7071088675-3@ybl',
+                'rubeena.rashid@ptyes'
+            ];
+            for (let u of defaultUpis) {
+                await UpiConfig.updateOne({ upiId: u }, { upiId: u }, { upsert: true });
+            }
+            console.log('[MONGODB] Default rotating UPIs seeded.');
         }
     } catch (err) {
         console.error('[MONGODB ADMIN ERROR]:', err.message);
@@ -463,23 +483,17 @@ function renderLayout(title, content, user, req) {
                 border-radius: 16px;
                 margin-bottom: 16px;
             }
-            .balance-cards-grid {
-                display: flex;
-                gap: 12px;
-                margin-bottom: 20px;
-            }
-            .balance-card {
-                flex: 1;
+            .balance-card-single {
                 background: linear-gradient(135deg, rgba(22, 27, 34, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
                 backdrop-filter: blur(10px);
                 border: 1px solid rgba(56, 189, 248, 0.15);
-                padding: 16px;
-                border-radius: 14px;
+                padding: 20px;
+                border-radius: 16px;
                 text-align: center;
                 box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+                margin-bottom: 20px;
             }
-            .balance-card.recharge .currency { color: #00e676; font-size: 22px; font-weight: 800; text-shadow: 0 0 20px rgba(0,230,118,0.3); }
-            .balance-card.withdraw .currency { color: #b388ff; font-size: 22px; font-weight: 800; text-shadow: 0 0 20px rgba(179,136,255,0.3); }
+            .balance-card-single .currency { color: #00e676; font-size: 28px; font-weight: 800; text-shadow: 0 0 20px rgba(0,230,118,0.3); }
             .action-buttons-stack button, .action-buttons-stack a {
                 display: block;
                 width: 100%;
@@ -750,8 +764,7 @@ app.post('/verify-signup-otp', async (req, res) => {
             username,
             name: record.name || '',
             password: record.password,
-            rechargeBalance: 0,
-            withdrawBalance: 0,
+            walletBalance: 0,
             is_admin: false,
             savedUpiIds: [],
             deposits: [],
@@ -859,11 +872,11 @@ app.get('/daily-signin', async (req, res) => {
     }
 
     user.lastCheckInDate = todayStr;
-    user.rechargeBalance = (user.rechargeBalance || 0) + 4;
+    user.walletBalance = (user.walletBalance || 0) + 4;
     await user.save();
     req.session.user = user;
 
-    res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Recharge Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
+    res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Wallet Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
 });
 
 // Home Page
@@ -1086,8 +1099,8 @@ app.post('/invest', async (req, res) => {
         return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Ye order pehle hi kisi aur dwara liya ja chuka hai (Sold Out)! Kripya doosra order select karein.</p><br><a href="/invest" class="text-blue-400 block text-center text-sm underline">Back to Invest</a>`, user, req));
     }
 
-    if ((user.rechargeBalance || 0) >= pPrice) {
-        user.rechargeBalance -= pPrice;
+    if ((user.walletBalance || 0) >= pPrice) {
+        user.walletBalance -= pPrice;
         if (!user.investments) user.investments = [];
 
         user.investments.push({
@@ -1100,7 +1113,7 @@ app.post('/invest', async (req, res) => {
         });
         await user.save();
     } else {
-        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Insufficient Recharge Balance! Please recharge your wallet first.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Recharge Now</a>`, user, req));
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Insufficient Wallet Balance! Please add funds to your wallet first.</p><br><a href="/deposit" class="text-blue-400 block text-center text-sm underline">Deposit Now</a>`, user, req));
     }
     res.redirect('/invest');
 });
@@ -1293,15 +1306,9 @@ app.get('/account', async (req, res) => {
                 <div class="account-status text-xs text-gray-300 mt-2">Name: ${currentUser.name || 'N/A'} &bull; Telegram: ${currentUser.username}</div>
             </div>
 
-            <div class="balance-cards-grid">
-                <div class="balance-card recharge">
-                    <span class="currency">₹${(currentUser.rechargeBalance || 0).toFixed(2)}</span>
-                    <span class="label text-xs text-gray-400 block mt-1 font-semibold">Recharge Balance</span>
-                </div>
-                <div class="balance-card withdraw">
-                    <span class="currency">₹${(currentUser.withdrawBalance || 0).toFixed(2)}</span>
-                    <span class="label text-xs text-gray-400 block mt-1 font-semibold">Withdraw Balance</span>
-                </div>
+            <div class="balance-card-single">
+                <span class="currency">₹${(currentUser.walletBalance || 0).toFixed(2)}</span>
+                <span class="label text-xs text-gray-400 block mt-1 font-semibold">Wallet Balance</span>
             </div>
 
             <div class="action-buttons-stack">
@@ -1339,7 +1346,7 @@ app.get('/deposit', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
     
-    let assignedUpi = getRandomUpiId();
+    let assignedUpi = await getRandomUpiId();
 
     let historyHtml = (user.deposits || []).map(d => {
         let statusColor = 'text-yellow-400';
@@ -1371,7 +1378,7 @@ app.get('/deposit', async (req, res) => {
             <h2 class="text-xl font-black text-emerald-400">Deposit Funds (₹100 - ₹50,000)</h2>
 
             <div class="deposit-warning">
-                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below. If you make a payment from any third-party wallet or unverified third-party app, your deposit will <strong>not</strong> be updated or credited to your recharge balance.
+                ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 authorized UPI apps provided below. If you make a payment from any third-party wallet or unverified third-party app, your deposit will <strong>not</strong> be updated or credited to your wallet balance.
             </div>
             
             <div id="step-amount">
@@ -1561,7 +1568,7 @@ app.get('/withdrawal', async (req, res) => {
             <h2 class="text-xl font-black text-purple-400">Manage Official UPI IDs</h2>
             
             <div class="bg-gray-800/80 p-3.5 rounded-xl text-xs text-emerald-400 font-bold border border-gray-700">
-                Withdraw Balance: ₹${(user.withdrawBalance || 0).toFixed(2)}
+                Wallet Balance: ₹${(user.walletBalance || 0).toFixed(2)}
             </div>
 
             <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300">
@@ -1621,7 +1628,7 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel with Auto Orders Management Tab
+// Admin Panel with UPI Management Tab
 app.get('/admin', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
@@ -1629,13 +1636,14 @@ app.get('/admin', async (req, res) => {
     let regularUsers = await User.find({ is_admin: { $ne: true } });
     let products = await Product.find({});
     let autoProducts = generateAutoOrders();
+    let dbUpis = await UpiConfig.find({});
 
     let usersHtml = regularUsers.map(u => `
         <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm border border-gray-700 shadow">
             <div class="flex justify-between items-center mb-2">
                 <div>
                     <p class="font-bold text-yellow-400">UID: ${u.uid} | Name: ${u.name || 'N/A'} | Telegram: ${u.username}</p>
-                    <p class="text-emerald-400 text-xs mt-0.5">Recharge Bal: ₹${(u.rechargeBalance || 0).toFixed(2)} | Withdraw Bal: ₹${(u.withdrawBalance || 0).toFixed(2)}</p>
+                    <p class="text-emerald-400 text-xs mt-0.5">Wallet Balance: ₹${(u.walletBalance || 0).toFixed(2)}</p>
                 </div>
                 <form action="/admin/add-balance" method="POST" class="flex space-x-1">
                     <input type="hidden" name="username" value="${u.username}">
@@ -1695,6 +1703,16 @@ app.get('/admin', async (req, res) => {
         </div>
     `).join('');
 
+    let upiListHtml = dbUpis.map(u => `
+        <div class="bg-gray-800/90 p-3.5 rounded-2xl mb-2 text-sm flex justify-between items-center border border-gray-700 shadow">
+            <span class="font-bold text-cyan-300">${u.upiId}</span>
+            <form action="/admin/delete-upi" method="POST">
+                <input type="hidden" name="upiId" value="${u.upiId}">
+                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
+            </form>
+        </div>
+    `).join('');
+
     let productListHtml = [];
     for (let p of products) {
         let investorsList = [];
@@ -1736,6 +1754,18 @@ app.get('/admin', async (req, res) => {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-emerald-400 mb-3 text-base">👥 All Registered Users</h3>${usersHtml.length ? usersHtml : '<p class="text-gray-400 text-sm text-center py-8">No users found.</p>'}</div>`;
     } else if (tab === 'deposits') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-blue-400 mb-3 text-base">💰 Pending Deposit Requests</h3>${depositsHtml.length ? depositsHtml.join('') : '<p class="text-gray-400 text-sm text-center py-8">No pending deposit requests.</p>'}</div>`;
+    } else if (tab === 'upi-manage') {
+        activeTabContent = `
+            <div class="space-y-5">
+                <h3 class="font-bold text-purple-400 text-base">💳 Add Rotating Deposit UPI ID</h3>
+                <form action="/admin/add-upi" method="POST" class="space-y-3 bg-gray-800/80 p-4 rounded-2xl border border-gray-700">
+                    <input type="text" name="upiId" placeholder="e.g. merchant@upi or 7071088675@mbk" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-purple-500">
+                    <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-purple-500/20">Add UPI ID for Rotation</button>
+                </form>
+                <h3 class="font-bold text-purple-400 text-base mt-6">Active Rotating UPI IDs (${dbUpis.length})</h3>
+                <div class="max-h-60 overflow-y-auto space-y-2">${upiListHtml.length ? upiListHtml : '<p class="text-gray-400 text-sm text-center py-6">No UPI IDs configured.</p>'}</div>
+            </div>
+        `;
     } else if (tab === 'auto-orders') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-cyan-400 mb-3 text-base">⚡ Live Automatic Rotating Orders</h3><p class="text-xs text-gray-300 mb-3">Ye orders system automatically generate aur rotate karta hai har user ke liye.</p>${autoOrdersHtml}</div>`;
     } else if (tab === 'products') {
@@ -1802,6 +1832,7 @@ app.get('/admin', async (req, res) => {
             <div class="flex space-x-2 border-b border-gray-800 pb-3 overflow-x-auto text-xs">
                 <a href="/admin?tab=users" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
                 <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits</a>
+                <a href="/admin?tab=upi-manage" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'upi-manage' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">UPI Management</a>
                 <a href="/admin?tab=auto-orders" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'auto-orders' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Auto Orders</a>
                 <a href="/admin?tab=products" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
                 <a href="/admin?tab=send-funds" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-teal-600 text-white shadow-teal-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Funds & Msg</a>
@@ -1813,6 +1844,23 @@ app.get('/admin', async (req, res) => {
         </div>
     `;
     res.send(renderLayout('Admin Panel', content, req.session.user, req));
+});
+
+app.post('/admin/add-upi', async (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    let { upiId } = req.body;
+    upiId = upiId.trim();
+    if (upiId) {
+        await UpiConfig.updateOne({ upiId }, { upiId }, { upsert: true });
+    }
+    res.redirect('/admin?tab=upi-manage');
+});
+
+app.post('/admin/delete-upi', async (req, res) => {
+    if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    let { upiId } = req.body;
+    await UpiConfig.deleteOne({ upiId });
+    res.redirect('/admin?tab=upi-manage');
 });
 
 app.post('/admin/add-product', async (req, res) => {
@@ -1841,7 +1889,7 @@ app.post('/admin/add-balance', async (req, res) => {
     const { username, amount } = req.body;
     let user = await User.findOne({ username });
     if (user) {
-        user.rechargeBalance = (user.rechargeBalance || 0) + parseFloat(amount);
+        user.walletBalance = (user.walletBalance || 0) + parseFloat(amount);
         await user.save();
     }
     res.redirect('/admin?tab=users');
@@ -1856,13 +1904,13 @@ app.post('/admin/action-deposit', async (req, res) => {
         if (deposit.status === 'Pending') {
             if (action === 'approve') {
                 deposit.status = 'Completed';
-                user.rechargeBalance = (user.rechargeBalance || 0) + deposit.amount;
+                user.walletBalance = (user.walletBalance || 0) + deposit.amount;
 
                 if (user.referredBy) {
                     let referrer = await User.findOne({ uid: user.referredBy });
                     if (referrer) {
                         let bonus = deposit.amount * 0.01;
-                        referrer.rechargeBalance = (referrer.rechargeBalance || 0) + bonus;
+                        referrer.walletBalance = (referrer.walletBalance || 0) + bonus;
                         if (!referrer.notifications) referrer.notifications = [];
                         referrer.notifications.push({
                             id: 'notif_' + Date.now(),
@@ -1890,7 +1938,7 @@ app.post('/admin/send-funds', async (req, res) => {
     let user = await User.findOne({ username });
     if (user) {
         let amt = parseFloat(amount);
-        user.rechargeBalance = (user.rechargeBalance || 0) + amt;
+        user.walletBalance = (user.walletBalance || 0) + amt;
         if (!user.deposits) user.deposits = [];
         user.deposits.push({
             amount: amt,
