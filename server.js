@@ -909,14 +909,27 @@ app.get('/home', async (req, res) => {
     res.send(renderLayout('Home', content, req.session.user, req));
 });
 
-// Invest Page
+// Invest Page with Auto-Rotating / Shuffling Orders & Specific Bonus Tiers
 app.get('/invest', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username });
     let products = await Product.find({});
 
+    // Shuffle orders automatically on each load
+    products = products.sort(() => Math.random() - 0.5);
+
     let productsHtml = products.map((p, index) => {
         const hasInvested = (currentUser.investments || []).some(inv => inv.productId === p._id);
+        
+        // Determine return text based on price range
+        let returnText = "";
+        if (p.price >= 100 && p.price <= 9999) {
+            returnText = `Return (4.2% + 1% Special Bonus): ₹${p.returnAmount}`;
+        } else if (p.price >= 10000 && p.price <= 50000) {
+            returnText = `Return (4.2% + 1% Special + 0.8% Extra Bonus): ₹${p.returnAmount}`;
+        } else {
+            returnText = `Return: ₹${p.returnAmount}`;
+        }
         
         return `
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl border border-gray-800 rounded-3xl p-4 flex flex-col justify-between shadow-2xl">
@@ -925,7 +938,7 @@ app.get('/invest', async (req, res) => {
                 <h4 class="font-black text-lg text-emerald-400">${p.name}</h4>
                 <div class="flex justify-between items-center mt-2">
                     <p class="text-sm text-gray-300">Price: <b class="text-white">₹${p.price}</b></p>
-                    <p class="text-sm text-yellow-400 font-bold">Return: ₹${p.returnAmount}</p>
+                    <p class="text-xs text-yellow-400 font-bold">${returnText}</p>
                 </div>
                 <p class="text-xs text-gray-400 mt-1">Duration: ${p.durationMinutes >= 60 ? (p.durationMinutes / 60) + ' Hours' : p.durationMinutes + ' Minutes'}</p>
             </div>
@@ -939,7 +952,7 @@ app.get('/invest', async (req, res) => {
 
     const content = `
         <div class="space-y-6">
-            <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>📦</span> Investment Products</h2>
+            <h2 class="text-2xl font-black text-yellow-400 flex items-center gap-2"><span>📦</span> Investment Products (Auto-Rotating)</h2>
             <div class="grid grid-cols-1 gap-4">
                 ${products.length ? productsHtml : '<p class="text-gray-400 text-sm text-center py-10 bg-gray-900/50 rounded-2xl border border-gray-800">No products available currently.</p>'}
             </div>
@@ -1145,7 +1158,6 @@ app.get('/account/withdrawals', async (req, res) => {
     let currentUser = await User.findOne({ username: req.session.user.username });
 
     let withdrawHistoryHtml = (currentUser.withdrawals || []).map(w => {
-        // Tax removed completely, showing exact requested amount
         let statusClass = (w.status === 'Approved' || w.status === 'Completed') ? 'text-emerald-400 font-bold' : ((w.status === 'Failed' || w.status === 'Rejected') ? 'text-red-400 font-bold' : 'text-yellow-400 font-bold');
         let displayStatus = (w.status === 'Approved') ? 'Completed' : w.status;
 
@@ -1458,7 +1470,7 @@ app.post('/deposit', upload.single('screenshot'), async (req, res) => {
     res.redirect('/deposit');
 });
 
-// Withdrawal Page (Unlimited withdrawals, daily limit check removed)
+// Withdrawal Page
 app.get('/withdrawal', async (req, res) => {
     if (!req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
@@ -1510,16 +1522,14 @@ app.get('/withdrawal', async (req, res) => {
             </div>
 
             <div class="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded-xl text-xs text-yellow-300">
-                ⚠️ <strong>Notice:</strong> Only Official UPI IDs of <b>Google Pay, PhonePe, Paytm & MobiKwik</b> are supported. 3rd-party wallet UPI IDs will be automatically rejected.
+                ⚠️ <strong>Notice:</strong> Only Official UPI IDs of <b>Google Pay, PhonePe, Paytm & MobiKwik</b> are supported.
             </div>
 
-            <!-- Add New UPI ID Form -->
             ${totalSaved < 4 ? `
                 <div class="bg-gray-800/50 p-4 rounded-2xl border border-gray-700/80 space-y-3">
                     <h3 class="text-xs font-bold text-cyan-400">➕ Add Official UPI ID (${totalSaved}/4 Added)</h3>
                     <form action="/withdrawal/add-upi" method="POST" class="space-y-2.5">
                         <input type="text" name="newUpiId" placeholder="e.g. yourname@okaxis, 9876543210@ybl, @paytm" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white text-xs focus:outline-none focus:border-cyan-500">
-                        <p class="text-[10px] text-gray-400">Allowed: GPay (@okaxis, @oksbi), PhonePe (@ybl), Paytm (@paytm), MobiKwik (@mbk).</p>
                         <button type="submit" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold p-2.5 rounded-xl text-xs shadow">Verify & Bind UPI</button>
                     </form>
                 </div>
@@ -1562,7 +1572,6 @@ app.get('/withdrawal', async (req, res) => {
     res.send(renderLayout('Withdraw', content, req.session.user, req));
 });
 
-// Route to Add & Validate Official UPI ID
 app.post('/withdrawal/add-upi', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { newUpiId } = req.body;
@@ -1593,7 +1602,6 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Submit Withdrawal (Unlimited withdrawals enabled)
 app.post('/withdrawal/submit', async (req, res) => {
     if (!req.session.user) return res.redirect('/login');
     const { selectedUpi, amount, password } = req.body;
@@ -1764,10 +1772,10 @@ app.get('/admin', async (req, res) => {
     } else if (tab === 'products') {
         activeTabContent = `
             <div class="space-y-5">
-                <h3 class="font-bold text-yellow-400 text-base">📦 Add New Investment Product</h3>
+                <h3 class="font-bold text-yellow-400 text-base">📦 Add New Investment Product (Auto-Rotating Tiers)</h3>
                 <form action="/admin/add-product" method="POST" class="space-y-3 bg-gray-800/80 p-4 rounded-2xl border border-gray-700">
                     <input type="text" name="name" placeholder="Product Name" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
-                    <input type="number" name="price" placeholder="Product Price (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
+                    <input type="number" name="price" placeholder="Product Price (₹) [₹100-₹9999 or ₹10k-₹50k]" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     <input type="number" name="returnAmount" placeholder="Return Income Amount (₹)" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     
                     <div class="flex space-x-2">
@@ -1781,7 +1789,7 @@ app.get('/admin', async (req, res) => {
                     <input type="text" name="imageUrl" placeholder="Image URL (optional)" class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-yellow-500">
                     <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-yellow-500/20">Add Product</button>
                 </form>
-                <h3 class="font-bold text-yellow-400 text-base mt-6">Active Products & Investor Details</h3>
+                <h3 class="font-bold text-yellow-400 text-base mt-6">Manage Products & Delete</h3>
                 <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml.join('') : '<p class="text-gray-400 text-sm text-center py-6">No products added.</p>'}</div>
             </div>
         `;
