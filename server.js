@@ -405,7 +405,7 @@ function renderLayout(title, content, user, req) {
     let topHeaderRight = '';
 
     let showChannelModal = false;
-    if (req && !req.session.modalShown) {
+    if (user && req && !req.session.modalShown) {
         showChannelModal = true;
         req.session.modalShown = true;
     }
@@ -436,7 +436,7 @@ function renderLayout(title, content, user, req) {
         `;
     }
 
-    const channelModalHtml = `
+    const channelModalHtml = user ? `
         <div id="channelModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${showChannelModal ? '' : 'hidden'}">
             <div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 max-w-sm w-full text-center space-y-3 shadow-2xl relative overflow-hidden">
                 <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
@@ -475,7 +475,7 @@ function renderLayout(title, content, user, req) {
                 document.getElementById('channelModal').classList.add('hidden');
             }
         </script>
-    `;
+    ` : '';
 
     return `
     <!DOCTYPE html>
@@ -653,7 +653,7 @@ app.get('/login', (req, res) => {
             });
         </script>
     `;
-    res.send(renderLayout('Login', formHtml, req.session.user, req));
+    res.send(renderLayout('Login', formHtml, null, req));
 });
 
 app.post('/login', async (req, res) => {
@@ -720,7 +720,7 @@ app.get('/signup', (req, res) => {
             <p class="text-center text-xs text-gray-400 mt-4">Already have an account? <a href="/login" class="text-green-400 font-bold hover:underline">Login</a></p>
         </div>
     `;
-    res.send(renderLayout('Sign Up', formHtml, req.session.user, req));
+    res.send(renderLayout('Sign Up', formHtml, null, req));
 });
 
 app.post('/send-signup-otp', async (req, res) => {
@@ -2036,7 +2036,7 @@ app.post('/admin/add-balance', async (req, res) => {
 
 app.post('/admin/action-deposit', async (req, res) => {
     if (!req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    const { userId, index, action } = req.body;
+    let { userId, index, action } = req.body;
     let user = await User.findById(userId);
     if (user && user.deposits && user.deposits[index]) {
         let deposit = user.deposits[index];
