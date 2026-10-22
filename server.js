@@ -441,37 +441,12 @@ function renderLayout(title, content, user, req) {
 
     const channelModalHtml = `
         <div id="channelModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 ${showChannelModal ? '' : 'hidden'}">
-            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-5 max-w-sm w-full text-center space-y-3 shadow-2xl relative overflow-hidden">
+            <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl relative overflow-hidden">
                 <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl"></div>
-                
-                <!-- Logo Display -->
-                <div class="relative w-16 h-16 rounded-2xl overflow-hidden mx-auto shadow-lg shadow-emerald-500/30 border border-emerald-500/40">
-                    <img src="${LOGO_URL}" alt="EarnX Pro Logo" class="w-full h-full object-cover">
-                </div>
-
-                <h3 class="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-gray-100 to-emerald-400">EarnX <span class="text-cyan-400">Pro</span></h3>
-                
-                <!-- English Rules & Profit Section -->
-                <div class="bg-gray-800/80 border border-gray-700 rounded-xl p-3 text-left space-y-2 text-xs">
-                    <p class="font-extrabold text-yellow-400 text-center border-b border-gray-700/60 pb-1">💡 EarnX Pro Profit & Bonus Structure</p>
-                    <div class="space-y-1.5 text-gray-200">
-                        <p class="flex items-start gap-1.5">
-                            <span class="text-emerald-400 font-bold">•</span> 
-                            <span><b>Base Profit:</b> Get <b>4.2% daily profit</b> on standard orders below ₹150.</span>
-                        </p>
-                        <p class="flex items-start gap-1.5">
-                            <span class="text-yellow-400 font-bold">•</span> 
-                            <span><b>Special Bonus (₹150 - ₹9,999):</b> Receive <b>4.2% + 1.0% Special Bonus</b> (Total 5.2% Return).</span>
-                        </p>
-                        <p class="flex items-start gap-1.5">
-                            <span class="text-cyan-400 font-bold">•</span> 
-                            <span><b>Mega Bonus (₹10,000+):</b> Receive <b>4.2% + 1.0% Special + 0.8% Extra Bonus</b> (Total 6.0% Return).</span>
-                        </p>
-                    </div>
-                </div>
-
-                <p class="text-[11px] text-gray-300">Join our Telegram channel for verified payment proofs and strategic updates!</p>
-                <a href="https://telegram.me/EarnXProo" target="_blank" onclick="closeChannelModal()" class="block w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs shadow-lg shadow-blue-500/25 transition-all">Follow Us on Telegram</a>
+                <div class="w-16 h-16 bg-blue-500/20 text-blue-400 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold shadow-inner">📢</div>
+                <h3 class="text-xl font-extrabold text-white">Join Our Official Channel</h3>
+                <p class="text-xs text-gray-300 leading-relaxed">Stay updated with verified payment proofs, strategic announcements, and latest platform security updates!</p>
+                <a href="https://telegram.me/EarnXProo" target="_blank" onclick="closeChannelModal()" class="block w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-blue-500/25 transition-all">Follow Us on Telegram</a>
                 <button onclick="closeChannelModal()" class="text-xs text-gray-400 underline hover:text-white transition-colors">Continue to Platform</button>
             </div>
         </div>
