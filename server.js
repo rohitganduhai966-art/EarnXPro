@@ -102,7 +102,9 @@ const productSchema = new mongoose.Schema({
 });
 
 const upiConfigSchema = new mongoose.Schema({
-    upiId: { type: String, unique: true, required: true }
+    upiId: { type: String, required: true },
+    minAmount: { type: Number, required: true, default: 0 },
+    maxAmount: { type: Number, required: true, default: 100000 }
 });
 
 const otpSchema = new mongoose.Schema({
@@ -196,15 +198,21 @@ async function detectFakeOrFraudPayment(utr, amount, clientUpiId) {
     return { isFake: false, reason: `Passed security check via ${appSourceCheck.appName}` };
 }
 
-// Dynamic Rotating UPI Fetcher from DB
-async function getRandomUpiId() {
+// Amount Range ke hisab se UPI fetch karne ka logic
+async function getUpiIdForAmount(amount) {
     try {
-        let upis = await UpiConfig.find({}, { upiId: 1 }).lean();
-        if (!upis || upis.length === 0) {
-            return 'rubeena.rashid@ptyes';
+        const amt = parseFloat(amount);
+        let upiDoc = await UpiConfig.findOne({
+            minAmount: { $lte: amt },
+            maxAmount: { $gte: amt }
+        }).lean();
+
+        if (upiDoc && upiDoc.upiId) {
+            return upiDoc.upiId;
         }
-        const randomIndex = Math.floor(Math.random() * upis.length);
-        return upis[randomIndex].upiId;
+
+        let fallbackUpi = await UpiConfig.findOne({}).lean();
+        return fallbackUpi ? fallbackUpi.upiId : 'rubeena.rashid@ptyes';
     } catch (err) {
         return 'rubeena.rashid@ptyes';
     }
@@ -304,17 +312,15 @@ async function ensureDefaultAdmin() {
         const countUpi = await UpiConfig.countDocuments({});
         if (countUpi === 0) {
             const defaultUpis = [
-                'Rohit.m820@ptaxis',
-                '6377833820-2.wallet@phonepe',
-                '7071088675@mbk',
-                '7071088675@mbkns',
-                '7071088675-3@ybl',
-                'rubeena.rashid@ptyes'
+                { upiId: 'Rohit.m820@ptaxis', minAmount: 100, maxAmount: 1000 },
+                { upiId: '6377833820-2.wallet@phonepe', minAmount: 1001, maxAmount: 5000 },
+                { upiId: '7071088675@mbk', minAmount: 5001, maxAmount: 10000 },
+                { upiId: '7071088675@mbkns', minAmount: 10001, maxAmount: 50000 }
             ];
             for (let u of defaultUpis) {
-                await UpiConfig.updateOne({ upiId: u }, { upiId: u }, { upsert: true });
+                await UpiConfig.updateOne({ upiId: u.upiId }, u, { upsert: true });
             }
-            console.log('[MONGODB] Default rotating UPIs seeded.');
+            console.log('[MONGODB] Default range-based UPIs seeded.');
         }
     } catch (err) {
         console.error('[MONGODB ADMIN ERROR]:', err.message);
@@ -1512,14 +1518,18 @@ app.get('/account', async (req, res) => {
     res.send(renderLayout('Account Dashboard', content, req.session.user, req));
 });
 
+app.get('/api/get-upi-for-amount', async (req, res) => {
+    const { amount } = req.query;
+    if (!amount) return res.json({ upiId: 'rubeena.rashid@ptyes' });
+    
+    const assignedUpi = await getUpiIdForAmount(amount);
+    res.json({ upiId: assignedUpi });
+});
+
 app.get('/deposit', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
     
-    const [user, assignedUpi] = await Promise.all([
-        User.findOne({ username: req.session.user.username }, { deposits: 1 }).lean(),
-        getRandomUpiId()
-    ]);
-
+    const user = await User.findOne({ username: req.session.user.username }, { deposits: 1 }).lean();
     if (!user) return res.redirect('/login');
 
     let historyHtml = (user.deposits || []).map(d => {
@@ -1571,8 +1581,8 @@ app.get('/deposit', async (req, res) => {
                 </div>
                 
                 <div class="upi-box bg-gray-800/90 p-3.5 rounded-xl border border-gray-700 flex justify-between items-center shadow-inner">
-                    <span class="text-xs">Pay to UPI ID: <strong id="targetUpi" class="text-emerald-400 text-sm font-bold">${assignedUpi}</strong></span>
-                    <button onclick="navigator.clipboard.writeText('${assignedUpi}'); alert('UPI ID Copied!');" class="bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white text-xs px-3.5 py-2 rounded-xl font-bold shadow">Copy UPI</button>
+                    <span class="text-xs">Pay to UPI ID: <strong id="targetUpi" class="text-emerald-400 text-sm font-bold"></strong></span>
+                    <button onclick="copyUpiId()" class="bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white text-xs px-3.5 py-2 rounded-xl font-bold shadow">Copy UPI</button>
                 </div>
 
                 <!-- 4 Official Branded App Buttons -->
@@ -1585,7 +1595,7 @@ app.get('/deposit', async (req, res) => {
 
                 <form action="/deposit" method="POST" enctype="multipart/form-data" class="space-y-3" id="depositForm">
                     <input type="hidden" name="amount" id="final_amount">
-                    <input type="hidden" name="gateway" value="${assignedUpi}">
+                    <input type="hidden" name="gateway" id="gatewayInput" value="">
                     <input type="hidden" name="selectedApp" id="selectedAppInput" value="unknown">
                     <input type="text" name="utr" id="utrInput" placeholder="Enter 12-digit UTR" pattern="[0-9]{12}" maxlength="12" required class="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-white focus:outline-none focus:border-emerald-500">
                     <small id="utrError" style="color: #ff5252; display: none;">UTR must be exactly 12 numeric digits.</small>
@@ -1608,14 +1618,25 @@ app.get('/deposit', async (req, res) => {
 
         <script>
             let timerInterval;
-            document.getElementById('initDepositForm').addEventListener('submit', function(e) {
+            let fetchedUpiId = '';
+
+            document.getElementById('initDepositForm').addEventListener('submit', async function(e) {
                 e.preventDefault();
                 let amt = document.getElementById('deposit_amount').value;
                 if(amt < 100 || amt > 50000) {
                     alert('Deposit amount must be between ₹100 and ₹50,000');
                     return;
                 }
+
+                // Fetch Range-based UPI ID from backend
+                const res = await fetch('/api/get-upi-for-amount?amount=' + amt);
+                const data = await res.json();
+                fetchedUpiId = data.upiId;
+
+                document.getElementById('targetUpi').textContent = fetchedUpiId;
+                document.getElementById('gatewayInput').value = fetchedUpiId;
                 document.getElementById('final_amount').value = amt;
+
                 document.getElementById('step-amount').style.display = 'none';
                 document.getElementById('step-gateway').style.display = 'block';
 
@@ -1633,19 +1654,23 @@ app.get('/deposit', async (req, res) => {
                 }, 1000);
             });
 
+            function copyUpiId() {
+                navigator.clipboard.writeText(fetchedUpiId);
+                alert('UPI ID Copied!');
+            }
+
             function launchOfficialApp(appType) {
                 const amt = document.getElementById('deposit_amount').value;
-                const upiId = '${assignedUpi}';
                 let targetUrl = '';
 
                 if (appType === 'gpay') {
-                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (appType === 'phonepe') {
-                    targetUrl = 'phonepe://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                    targetUrl = 'phonepe://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (appType === 'paytm') {
-                    targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                    targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 } else if (appType === 'mobikwik') {
-                    targetUrl = 'mobikwik://pay?pa=' + encodeURIComponent(upiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                    targetUrl = 'mobikwik://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
                 }
 
                 document.getElementById('selectedAppInput').value = appType;
@@ -1667,7 +1692,7 @@ app.get('/deposit', async (req, res) => {
 
                 const formData = new FormData();
                 formData.append('amount', document.getElementById('final_amount').value);
-                formData.append('gateway', '${assignedUpi}');
+                formData.append('gateway', fetchedUpiId);
                 formData.append('selectedApp', document.getElementById('selectedAppInput').value);
                 formData.append('utr', utrVal);
                 formData.append('screenshot', document.getElementById('screenshotFile').files[0]);
@@ -1908,7 +1933,10 @@ app.get('/admin', async (req, res) => {
 
     let upiListHtml = dbUpis.map(u => `
         <div class="bg-gray-800/90 p-3.5 rounded-2xl mb-2 text-sm flex justify-between items-center border border-gray-700 shadow">
-            <span class="font-bold text-cyan-300">${u.upiId}</span>
+            <div>
+                <span class="font-bold text-cyan-300">${u.upiId}</span>
+                <span class="text-xs text-yellow-400 ml-2">(Range: ₹${u.minAmount} - ₹${u.maxAmount})</span>
+            </div>
             <form action="/admin/delete-upi" method="POST">
                 <input type="hidden" name="upiId" value="${u.upiId}">
                 <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
@@ -1969,12 +1997,25 @@ app.get('/admin', async (req, res) => {
     } else if (tab === 'upi-manage') {
         activeTabContent = `
             <div class="space-y-5">
-                <h3 class="font-bold text-purple-400 text-base">💳 Add Rotating Deposit UPI ID</h3>
+                <h3 class="font-bold text-purple-400 text-base">💳 Add Range-Based Deposit UPI ID</h3>
                 <form action="/admin/add-upi" method="POST" class="space-y-3 bg-gray-800/80 p-4 rounded-2xl border border-gray-700">
-                    <input type="text" name="upiId" placeholder="e.g. merchant@upi or 7071088675@mbk" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-purple-500">
-                    <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-purple-500/20">Add UPI ID for Rotation</button>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-300 mb-1">UPI ID</label>
+                        <input type="text" name="upiId" placeholder="e.g. merchant@upi or 7071088675@mbk" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Min Deposit (₹)</label>
+                            <input type="number" name="minAmount" placeholder="e.g. 100" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-300 mb-1">Max Deposit (₹)</label>
+                            <input type="number" name="maxAmount" placeholder="e.g. 1000" required class="w-full bg-gray-900 p-3 rounded-xl text-xs text-white border border-gray-700 focus:outline-none">
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-purple-500/20">Set UPI ID for Range</button>
                 </form>
-                <h3 class="font-bold text-purple-400 text-base mt-6">Active Rotating UPI IDs (${dbUpis.length})</h3>
+                <h3 class="font-bold text-purple-400 text-base mt-6">Configured Range UPI IDs (${dbUpis.length})</h3>
                 <div class="max-h-60 overflow-y-auto space-y-2">${upiListHtml.length ? upiListHtml : '<p class="text-gray-400 text-sm text-center py-6">No UPI IDs configured.</p>'}</div>
             </div>
         `;
@@ -2060,10 +2101,17 @@ app.get('/admin', async (req, res) => {
 
 app.post('/admin/add-upi', async (req, res) => {
     if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    let { upiId } = req.body;
+    let { upiId, minAmount, maxAmount } = req.body;
     upiId = upiId.trim();
+    const min = parseFloat(minAmount) || 0;
+    const max = parseFloat(maxAmount) || 100000;
+
     if (upiId) {
-        await UpiConfig.updateOne({ upiId }, { upiId }, { upsert: true });
+        await UpiConfig.create({
+            upiId: upiId,
+            minAmount: min,
+            maxAmount: max
+        });
     }
     res.redirect('/admin?tab=upi-manage');
 });
