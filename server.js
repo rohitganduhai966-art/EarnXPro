@@ -1587,7 +1587,7 @@ app.get('/deposit', async (req, res) => {
                     <button onclick="copyUpiId()" class="bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white text-xs px-3.5 py-2 rounded-xl font-bold shadow">Copy UPI</button>
                 </div>
 
-                <!-- 4 Official Branded App Buttons with Universal Deep Link -->
+                <!-- 4 Official Branded App Buttons with Direct App-Specific Intents -->
                 <div class="upi-options-grid grid grid-cols-2 gap-2.5">
                     <button type="button" onclick="launchOfficialApp('gpay')" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🔵 Google Pay Official</button>
                     <button type="button" onclick="launchOfficialApp('phonepe')" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🟣 PhonePe Official</button>
@@ -1674,9 +1674,27 @@ app.get('/deposit', async (req, res) => {
                 const pn = encodeURIComponent('EarnXPro');
                 const am = encodeURIComponent(amt);
                 const cu = 'INR';
+                const tn = encodeURIComponent('EarnXPro Deposit');
+                const tr = 'TXN' + Date.now();
 
-                // Universal standard UPI scheme which opens installed payment app smoothly
-                let targetUrl = \`upi://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
+                let targetUrl = '';
+
+                switch(appType) {
+                    case 'gpay':
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}&tn=\${tn}&tr=\${tr}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end;\`;
+                        break;
+                    case 'phonepe':
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}&tn=\${tn}&tr=\${tr}#Intent;scheme=upi;package=com.phonepe.app;end;\`;
+                        break;
+                    case 'paytm':
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}&tn=\${tn}&tr=\${tr}#Intent;scheme=upi;package=net.one97.paytm;end;\`;
+                        break;
+                    case 'mobikwik':
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}&tn=\${tn}&tr=\${tr}#Intent;scheme=upi;package=com.mobikwik_new;end;\`;
+                        break;
+                    default:
+                        targetUrl = \`upi://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}&tn=\${tn}&tr=\${tr}\`;
+                }
 
                 window.location.href = targetUrl;
             }
@@ -1915,7 +1933,7 @@ app.get('/admin', async (req, res) => {
                                 <input type="hidden" name="userId" value="${u._id}">
                                 <input type="hidden" name="index" value="${dIdx}">
                                 <input type="hidden" name="action" value="reject">
-                                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-2 rounded-xl text-xs font-bold text-white shadow">Dismiss</button>
+                                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Dismiss</button>
                             </form>
                         </div>
                     </div>
