@@ -104,7 +104,8 @@ const productSchema = new mongoose.Schema({
 const upiConfigSchema = new mongoose.Schema({
     upiId: { type: String, required: true },
     minAmount: { type: Number, required: true, default: 0 },
-    maxAmount: { type: Number, required: true, default: 100000 }
+    maxAmount: { type: Number, required: true, default: 100000 },
+    isActive: { type: Boolean, default: true }
 });
 
 const otpSchema = new mongoose.Schema({
@@ -198,11 +199,12 @@ async function detectFakeOrFraudPayment(utr, amount, clientUpiId) {
     return { isFake: false, reason: `Passed security check via ${appSourceCheck.appName}` };
 }
 
-// Amount Range ke hisab se UPI fetch karne ka logic
+// Amount Range + Active Status (ON/OFF) ke hisab se UPI fetch karne ka logic
 async function getUpiIdForAmount(amount) {
     try {
         const amt = parseFloat(amount);
         let upiDoc = await UpiConfig.findOne({
+            isActive: true,
             minAmount: { $lte: amt },
             maxAmount: { $gte: amt }
         }).lean();
@@ -211,7 +213,7 @@ async function getUpiIdForAmount(amount) {
             return upiDoc.upiId;
         }
 
-        let fallbackUpi = await UpiConfig.findOne({}).lean();
+        let fallbackUpi = await UpiConfig.findOne({ isActive: true }).lean();
         return fallbackUpi ? fallbackUpi.upiId : 'rubeena.rashid@ptyes';
     } catch (err) {
         return 'rubeena.rashid@ptyes';
@@ -312,10 +314,10 @@ async function ensureDefaultAdmin() {
         const countUpi = await UpiConfig.countDocuments({});
         if (countUpi === 0) {
             const defaultUpis = [
-                { upiId: 'Rohit.m820@ptaxis', minAmount: 100, maxAmount: 1000 },
-                { upiId: '6377833820-2.wallet@phonepe', minAmount: 1001, maxAmount: 5000 },
-                { upiId: '7071088675@mbk', minAmount: 5001, maxAmount: 10000 },
-                { upiId: '7071088675@mbkns', minAmount: 10001, maxAmount: 50000 }
+                { upiId: 'Rohit.m820@ptaxis', minAmount: 100, maxAmount: 1000, isActive: true },
+                { upiId: '6377833820-2.wallet@phonepe', minAmount: 1001, maxAmount: 5000, isActive: true },
+                { upiId: '7071088675@mbk', minAmount: 5001, maxAmount: 10000, isActive: true },
+                { upiId: '7071088675@mbkns', minAmount: 10001, maxAmount: 50000, isActive: true }
             ];
             for (let u of defaultUpis) {
                 await UpiConfig.updateOne({ upiId: u.upiId }, u, { upsert: true });
@@ -1628,7 +1630,7 @@ app.get('/deposit', async (req, res) => {
                     return;
                 }
 
-                // Fetch Range-based UPI ID from backend
+                // Fetch Range-based active UPI ID from backend
                 const res = await fetch('/api/get-upi-for-amount?amount=' + amt);
                 const data = await res.json();
                 fetchedUpiId = data.upiId;
@@ -1934,13 +1936,21 @@ app.get('/admin', async (req, res) => {
     let upiListHtml = dbUpis.map(u => `
         <div class="bg-gray-800/90 p-3.5 rounded-2xl mb-2 text-sm flex justify-between items-center border border-gray-700 shadow">
             <div>
-                <span class="font-bold text-cyan-300">${u.upiId}</span>
-                <span class="text-xs text-yellow-400 ml-2">(Range: ₹${u.minAmount} - ₹${u.maxAmount})</span>
+                <p class="font-bold text-cyan-300">${u.upiId}</p>
+                <p class="text-xs text-yellow-400 mt-0.5">Range: ₹${u.minAmount} - ₹${u.maxAmount} | Status: <b class="${u.isActive ? 'text-emerald-400' : 'text-red-400'}">${u.isActive ? 'ON (Visible)' : 'OFF (Hidden)'}</b></p>
             </div>
-            <form action="/admin/delete-upi" method="POST">
-                <input type="hidden" name="upiId" value="${u.upiId}">
-                <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
-            </form>
+            <div class="flex space-x-2">
+                <form action="/admin/toggle-upi" method="POST">
+                    <input type="hidden" name="id" value="${u._id}">
+                    <button type="submit" class="${u.isActive ? 'bg-amber-600 hover:bg-amber-500' : 'bg-emerald-600 hover:bg-emerald-500'} px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">
+                        ${u.isActive ? 'Turn OFF' : 'Turn ON'}
+                    </button>
+                </form>
+                <form action="/admin/delete-upi" method="POST">
+                    <input type="hidden" name="id" value="${u._id}">
+                    <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
+                </form>
+            </div>
         </div>
     `).join('');
 
@@ -2015,7 +2025,7 @@ app.get('/admin', async (req, res) => {
                     </div>
                     <button type="submit" class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-purple-500/20">Set UPI ID for Range</button>
                 </form>
-                <h3 class="font-bold text-purple-400 text-base mt-6">Configured Range UPI IDs (${dbUpis.length})</h3>
+                <h3 class="font-bold text-purple-400 text-base mt-6">Configured UPI IDs (${dbUpis.length})</h3>
                 <div class="max-h-60 overflow-y-auto space-y-2">${upiListHtml.length ? upiListHtml : '<p class="text-gray-400 text-sm text-center py-6">No UPI IDs configured.</p>'}</div>
             </div>
         `;
@@ -2110,16 +2120,28 @@ app.post('/admin/add-upi', async (req, res) => {
         await UpiConfig.create({
             upiId: upiId,
             minAmount: min,
-            maxAmount: max
+            maxAmount: max,
+            isActive: true
         });
+    }
+    res.redirect('/admin?tab=upi-manage');
+});
+
+app.post('/admin/toggle-upi', async (req, res) => {
+    if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    let { id } = req.body;
+    let upi = await UpiConfig.findById(id);
+    if (upi) {
+        upi.isActive = !upi.isActive;
+        await upi.save();
     }
     res.redirect('/admin?tab=upi-manage');
 });
 
 app.post('/admin/delete-upi', async (req, res) => {
     if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
-    let { upiId } = req.body;
-    await UpiConfig.deleteOne({ upiId });
+    let { id } = req.body;
+    await UpiConfig.deleteOne({ _id: id });
     res.redirect('/admin?tab=upi-manage');
 });
 
