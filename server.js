@@ -1587,7 +1587,7 @@ app.get('/deposit', async (req, res) => {
                     <button onclick="copyUpiId()" class="bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white text-xs px-3.5 py-2 rounded-xl font-bold shadow">Copy UPI</button>
                 </div>
 
-                <!-- 4 Official Branded App Buttons with Android Intent Fallback -->
+                <!-- 4 Official Branded App Buttons with Universal Deep Link -->
                 <div class="upi-options-grid grid grid-cols-2 gap-2.5">
                     <button type="button" onclick="launchOfficialApp('gpay')" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🔵 Google Pay Official</button>
                     <button type="button" onclick="launchOfficialApp('phonepe')" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🟣 PhonePe Official</button>
@@ -1675,34 +1675,8 @@ app.get('/deposit', async (req, res) => {
                 const am = encodeURIComponent(amt);
                 const cu = 'INR';
 
-                let targetUrl = '';
-                const isAndroid = /Android/i.test(navigator.userAgent);
-
-                if (appType === 'gpay') {
-                    if (isAndroid) {
-                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end\`;
-                    } else {
-                        targetUrl = \`gpay://upi/pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
-                    }
-                } else if (appType === 'mobikwik') {
-                    if (isAndroid) {
-                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=com.mobikwik;end\`;
-                    } else {
-                        targetUrl = \`mobikwik://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
-                    }
-                } else if (appType === 'phonepe') {
-                    if (isAndroid) {
-                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=com.phonepe.app;end\`;
-                    } else {
-                        targetUrl = \`phonepe://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
-                    }
-                } else if (appType === 'paytm') {
-                    if (isAndroid) {
-                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=net.one97.paytm;end\`;
-                    } else {
-                        targetUrl = \`paytmmp://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
-                    }
-                }
+                // Universal standard UPI scheme which opens installed payment app smoothly
+                let targetUrl = \`upi://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
 
                 window.location.href = targetUrl;
             }
@@ -1861,7 +1835,7 @@ app.post('/withdrawal/add-upi', async (req, res) => {
     res.redirect('/withdrawal');
 });
 
-// Admin Panel (Fixed MongoDB query & fully parallelized)
+// Admin Panel
 app.get('/admin', async (req, res) => {
     if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
