@@ -1587,7 +1587,7 @@ app.get('/deposit', async (req, res) => {
                     <button onclick="copyUpiId()" class="bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white text-xs px-3.5 py-2 rounded-xl font-bold shadow">Copy UPI</button>
                 </div>
 
-                <!-- 4 Official Branded App Buttons -->
+                <!-- 4 Official Branded App Buttons with Android Intent Fallback -->
                 <div class="upi-options-grid grid grid-cols-2 gap-2.5">
                     <button type="button" onclick="launchOfficialApp('gpay')" class="upi-app-btn bg-blue-600 hover:bg-blue-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🔵 Google Pay Official</button>
                     <button type="button" onclick="launchOfficialApp('phonepe')" class="upi-app-btn bg-purple-600 hover:bg-purple-500 text-center text-white py-3 rounded-xl text-xs font-bold block shadow w-full">🟣 PhonePe Official</button>
@@ -1663,19 +1663,47 @@ app.get('/deposit', async (req, res) => {
 
             function launchOfficialApp(appType) {
                 const amt = document.getElementById('deposit_amount').value;
-                let targetUrl = '';
-
-                if (appType === 'gpay') {
-                    targetUrl = 'upi://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                } else if (appType === 'phonepe') {
-                    targetUrl = 'phonepe://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                } else if (appType === 'paytm') {
-                    targetUrl = 'paytmmp://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
-                } else if (appType === 'mobikwik') {
-                    targetUrl = 'mobikwik://pay?pa=' + encodeURIComponent(fetchedUpiId) + '&pn=EarnXPro&am=' + amt + '&cu=INR';
+                if (!amt || !fetchedUpiId) {
+                    alert('Please enter a valid amount first!');
+                    return;
                 }
 
                 document.getElementById('selectedAppInput').value = appType;
+
+                const pa = encodeURIComponent(fetchedUpiId);
+                const pn = encodeURIComponent('EarnXPro');
+                const am = encodeURIComponent(amt);
+                const cu = 'INR';
+
+                let targetUrl = '';
+                const isAndroid = /Android/i.test(navigator.userAgent);
+
+                if (appType === 'gpay') {
+                    if (isAndroid) {
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=com.google.android.apps.nbu.paisa.user;end\`;
+                    } else {
+                        targetUrl = \`gpay://upi/pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
+                    }
+                } else if (appType === 'mobikwik') {
+                    if (isAndroid) {
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=com.mobikwik;end\`;
+                    } else {
+                        targetUrl = \`mobikwik://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
+                    }
+                } else if (appType === 'phonepe') {
+                    if (isAndroid) {
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=com.phonepe.app;end\`;
+                    } else {
+                        targetUrl = \`phonepe://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
+                    }
+                } else if (appType === 'paytm') {
+                    if (isAndroid) {
+                        targetUrl = \`intent://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}#Intent;scheme=upi;package=net.one97.paytm;end\`;
+                    } else {
+                        targetUrl = \`paytmmp://pay?pa=\${pa}&pn=\${pn}&am=\${am}&cu=\${cu}\`;
+                    }
+                }
+
                 window.location.href = targetUrl;
             }
 
