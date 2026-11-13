@@ -274,17 +274,17 @@ function generateAutoOrders() {
         }
 
         if (amt < 150) {
-            const profit = amt * 0.042;
+            const profit = amt * 0.044;
             returnAmt = Math.round(amt + profit);
             bonusLabel = "";
         } else if (amt >= 150 && amt < 10000) {
-            const profit = amt * 0.052;
+            const profit = amt * 0.054;
             returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special Bonus";
+            bonusLabel = "4.4% + 1% Special Bonus";
         } else {
-            const profit = amt * 0.06;
+            const profit = amt * 0.062;
             returnAmt = Math.round(amt + profit);
-            bonusLabel = "4.2% + 1% Special + 0.8% Extra Bonus";
+            bonusLabel = "4.4% + 1% Special + 0.8% Extra Bonus";
         }
 
         autoProducts.push({
@@ -526,15 +526,15 @@ function renderLayout(title, content, user, req) {
                     <div class="space-y-1.5 text-gray-200">
                         <p class="flex items-start gap-1.5">
                             <span class="text-emerald-400 font-bold">•</span> 
-                            <span><b>Base Profit:</b> Get <b>4.2% daily profit</b> on standard orders below ₹150.</span>
+                            <span><b>Base Profit:</b> Get <b>4.4% daily profit</b> on standard orders below ₹150.</span>
                         </p>
                         <p class="flex items-start gap-1.5">
                             <span class="text-yellow-400 font-bold">•</span> 
-                            <span><b>Special Bonus (₹150 - ₹9,999):</b> Receive <b>4.2% + 1.0% Special Bonus</b> (Total 5.2% Return).</span>
+                            <span><b>Special Bonus (₹150 - ₹9,999):</b> Receive <b>4.4% + 1.0% Special Bonus</b> (Total 5.4% Return).</span>
                         </p>
                         <p class="flex items-start gap-1.5">
                             <span class="text-cyan-400 font-bold">•</span> 
-                            <span><b>Mega Bonus (₹10,000+):</b> Receive <b>4.2% + 1.0% Special + 0.8% Extra Bonus</b> (Total 6.0% Return).</span>
+                            <span><b>Mega Bonus (₹10,000+):</b> Receive <b>4.4% + 1.0% Special + 0.8% Extra Bonus</b> (Total 6.2% Return).</span>
                         </p>
                     </div>
                 </div>
@@ -1212,12 +1212,33 @@ app.get('/invest', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
     
     const [currentUser, dbProducts, allUsers] = await Promise.all([
-        User.findOne({ username: req.session.user.username }, { investments: 1 }).lean(),
+        User.findOne({ username: req.session.user.username }, { investments: 1, walletBank: 1, walletBalance: 1, deposits: 1 }).lean(),
         Product.find({}).lean(),
         User.find({ "investments.status": { $in: ["Active", "Completed"] } }, { "investments.productId": 1 }).lean()
     ]);
 
     if (!currentUser) return res.redirect('/login');
+
+    // Calculate total reward and pending amount/count
+    let totalReward = 0;
+    let pendingAmount = 0;
+    
+    if (currentUser.investments && currentUser.investments.length > 0) {
+        currentUser.investments.forEach(inv => {
+            const profit = (inv.returnAmount || 0) - (inv.amount || 0);
+            totalReward += profit > 0 ? profit : 0;
+            if (inv.status === 'Pending') {
+                pendingAmount += (inv.amount || 0);
+            }
+        });
+    }
+
+    const hasInvestedOrDeposited = (currentUser.investments && currentUser.investments.length > 0) || 
+                                  (currentUser.deposits && currentUser.deposits.some(d => d.status === 'Completed' || d.status === 'Approved'));
+    
+    const displayBalance = hasInvestedOrDeposited ? (currentUser.walletBalance || 0) : 0;
+    const displayReward = (currentUser.investments && currentUser.investments.length > 0) ? totalReward : 0;
+    const displayPending = pendingAmount;
 
     let autoProducts = generateAutoOrders();
     let allProducts = [...dbProducts, ...autoProducts];
@@ -1283,15 +1304,15 @@ app.get('/invest', async (req, res) => {
             let bonusLabelHtml = '';
 
             if (p.price >= 150 && p.price < 10000) {
-                const profit = p.price * 0.052;
+                const profit = p.price * 0.054;
                 finalReturnAmount = Math.round(p.price + profit);
                 bonusLabelHtml = `<div class="mt-2 inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 text-[10px] px-2.5 py-1 rounded-lg border border-emerald-500/20 font-bold">🎁 +₹${Math.round(finalReturnAmount - p.price)} total with Special Bonus</div>`;
             } else if (p.price >= 10000) {
-                const profit = p.price * 0.06;
+                const profit = p.price * 0.062;
                 finalReturnAmount = Math.round(p.price + profit);
                 bonusLabelHtml = `<div class="mt-2 inline-flex items-center gap-1 bg-cyan-500/10 text-cyan-400 text-[10px] px-2.5 py-1 rounded-lg border border-cyan-500/20 font-bold">🎁 +₹${Math.round(finalReturnAmount - p.price)} total with Special + Extra Bonus</div>`;
             } else {
-                const profit = p.price * 0.042;
+                const profit = p.price * 0.044;
                 finalReturnAmount = Math.round(p.price + profit);
             }
 
@@ -1325,8 +1346,45 @@ app.get('/invest', async (req, res) => {
         `;
     }
 
+    const topBannerHtml = `
+        <div class="bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800 rounded-3xl p-5 text-white shadow-2xl mb-5 relative overflow-hidden border border-emerald-500/40">
+            <div class="absolute -right-10 -top-10 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <span class="text-xs font-semibold text-emerald-200 uppercase tracking-wider">Cashback</span>
+                    <h3 class="text-3xl font-black tracking-tight mt-0.5">4.4%</h3>
+                </div>
+                <div class="flex items-end space-x-1 h-10">
+                    <div class="w-2 bg-emerald-300/40 rounded-t h-3"></div>
+                    <div class="w-2 bg-emerald-300/60 rounded-t h-6"></div>
+                    <div class="w-2 bg-white rounded-t h-10"></div>
+                    <div class="w-2 bg-emerald-300/60 rounded-t h-5"></div>
+                    <div class="w-2 bg-emerald-300/40 rounded-t h-7"></div>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3 pt-2 border-t border-emerald-500/30">
+                <div class="bg-black/20 backdrop-blur-md p-3 rounded-2xl border border-white/10">
+                    <span class="text-[10px] text-emerald-200 block uppercase font-semibold">Balance</span>
+                    <span class="text-lg font-black tracking-wide mt-0.5 block">∫ ${displayBalance.toFixed(2)}</span>
+                </div>
+                <div class="space-y-2">
+                    <div class="bg-black/20 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 flex justify-between items-center">
+                        <span class="text-[9px] text-emerald-200 uppercase font-semibold">Reward</span>
+                        <span class="text-xs font-black">∫ ${displayReward.toFixed(2)}</span>
+                    </div>
+                    <div class="bg-black/20 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 flex justify-between items-center">
+                        <span class="text-[9px] text-emerald-200 uppercase font-semibold">Pending</span>
+                        <span class="text-xs font-black">∫ ${displayPending.toFixed(2)}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
     const content = `
         <div class="space-y-4">
+            ${topBannerHtml}
+
             <div class="flex space-x-2 overflow-x-auto pb-2 scrollbar-none" id="tabsContainer">
                 ${tabButtonsHtml}
             </div>
@@ -1382,13 +1440,13 @@ app.post('/invest', async (req, res) => {
 
     let calculatedReturn = baseReturn;
     if (pPrice >= 150 && pPrice < 10000) {
-        const profit = pPrice * 0.052;
+        const profit = pPrice * 0.054;
         calculatedReturn = Math.round(pPrice + profit);
     } else if (pPrice >= 10000) {
-        const profit = pPrice * 0.06;
+        const profit = pPrice * 0.062;
         calculatedReturn = Math.round(pPrice + profit);
     } else {
-        const profit = pPrice * 0.042;
+        const profit = pPrice * 0.044;
         calculatedReturn = Math.round(pPrice + profit);
     }
 
@@ -1753,11 +1811,6 @@ app.get('/deposit', async (req, res) => {
         <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4 deposit-page relative">
             <h2 class="text-xl font-black text-emerald-400">Deposit Funds (₹100 - ₹50,000)</h2>
 
-            <!-- Modern floating copy toast notification -->
-            <div id="copyToast" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-gray-900 text-emerald-400 border border-emerald-500/40 px-4 py-2 rounded-xl text-xs font-bold shadow-2xl transition-all duration-300 opacity-0 pointer-events-none z-50">
-                ✅ Copied!
-            </div>
-
             <div class="deposit-warning">
                 ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 official UPI apps provided below. Fake screenshots or third-party apps will be instantly detected and flagged as fraudulent by our system.
             </div>
@@ -1850,11 +1903,6 @@ app.get('/deposit', async (req, res) => {
 
             function copyUpiId() {
                 navigator.clipboard.writeText(fetchedUpiId);
-                const toast = document.getElementById('copyToast');
-                toast.style.opacity = '1';
-                setTimeout(() => {
-                    toast.style.opacity = '0';
-                }, 1800);
             }
 
             function launchOfficialApp(appType) {
@@ -2144,7 +2192,7 @@ app.get('/admin', async (req, res) => {
             <div>
                 <p class="font-bold text-emerald-400">${ap.name} (${ap.tabKey})</p>
                 <p class="text-gray-300 text-xs mt-1">Price: ₹${ap.price} | Return: ₹${ap.returnAmount}</p>
-                <p class="text-xs text-cyan-300 mt-0.5">Bonus: ${ap.bonusLabel || 'Standard (4.2%)'}</p>
+                <p class="text-xs text-cyan-300 mt-0.5">Bonus: ${ap.bonusLabel || 'Standard (4.4%)'}</p>
             </div>
             <span class="text-xs bg-emerald-500/20 text-emerald-400 px-3 py-1.5 rounded-xl font-bold border border-emerald-500/30">Active Live Pool</span>
         </div>
