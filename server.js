@@ -90,7 +90,7 @@ const userSchema = new mongoose.Schema({
     referredBy: { type: String, default: null },
     referralCount: { type: Number, default: 0 },
     teamLevel: { type: String, default: 'A' },
-    lastCheckInDate: { type: String, default: null }
+    taskClaimed: { type: Boolean, default: false }
 });
 
 // Live Customer Support Chat Schema
@@ -98,6 +98,7 @@ const supportMessageSchema = new mongoose.Schema({
     username: { type: String, lowercase: true, trim: true },
     sender: { type: String, enum: ['user', 'admin'] },
     message: String,
+    screenshotUrl: String,
     date: { type: String, default: () => getISTDateTime() }
 });
 
@@ -315,7 +316,7 @@ async function ensureDefaultAdmin() {
                 referredBy: null,
                 referralCount: 0,
                 teamLevel: 'A',
-                lastCheckInDate: null
+                taskClaimed: false
             });
             console.log('[MONGODB] Default Admin created successfully.');
         }
@@ -863,7 +864,7 @@ app.post('/verify-signup-otp', async (req, res) => {
             referredBy,
             referralCount: 0,
             teamLevel: 'A',
-            lastCheckInDate: null
+            taskClaimed: false
         });
         await Otp.deleteOne({ username });
         if (req.session) req.session.modalShown = false;
@@ -949,25 +950,107 @@ app.post('/verify-and-reset', async (req, res) => {
     res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Invalid OTP!</p><br><a href="/forgot-password" class="text-blue-400 block text-center text-sm underline">Try Again</a>`, null, req));
 });
 
-app.get('/daily-signin', async (req, res) => {
+// TASK ROUTE (₹10,000 total deposit completed -> ₹100 reward, once only)
+app.get('/task', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    let user = await User.findOne({ username: req.session.user.username }).lean();
+    if (!user) return res.redirect('/login');
+
+    let totalCompletedDeposit = 0;
+    (user.deposits || []).forEach(d => {
+        if (d.status === 'Completed' || d.status === 'Approved') {
+            totalCompletedDeposit += (d.amount || 0);
+        }
+    });
+
+    const targetAmount = 10000;
+    const progressPercent = Math.min(100, Math.round((totalCompletedDeposit / targetAmount) * 100));
+    const isEligible = totalCompletedDeposit >= targetAmount && !user.taskClaimed;
+
+    const content = `
+        <div class="space-y-6 max-w-lg mx-auto">
+            <h2 class="text-xl font-black text-yellow-400 flex items-center gap-2"><span>🎯</span> Earning Task Center</h2>
+            
+            <div class="bg-gradient-to-br from-gray-900/95 to-slate-900/95 backdrop-blur-2xl p-5 rounded-3xl border border-gray-800 shadow-2xl space-y-4">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-base text-emerald-400">Milestone Deposit Task</h3>
+                    <span class="text-xs bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full font-extrabold border border-yellow-500/30">Reward: ₹100</span>
+                </div>
+                
+                <p class="text-xs text-gray-300 leading-relaxed">
+                    Complete a cumulative total deposit of <b>₹10,000</b> on EarnX Pro to claim your exclusive <b>₹100 bonus reward</b> instantly! (Available only once per user).
+                </p>
+
+                <div class="bg-gray-800/80 p-3.5 rounded-2xl border border-gray-700/60 space-y-2">
+                    <div class="flex justify-between text-xs font-bold">
+                        <span class="text-gray-400">Total Completed Deposits:</span>
+                        <span class="text-emerald-400">₹${totalCompletedDeposit.toLocaleString()} / ₹10,000</span>
+                    </div>
+                    <div class="w-full bg-gray-900 h-3 rounded-full overflow-hidden border border-gray-700">
+                        <div class="bg-gradient-to-r from-green-500 to-emerald-400 h-full transition-all duration-500" style="width: ${progressPercent}%;"></div>
+                    </div>
+                    <p class="text-[10px] text-right text-gray-400 font-semibold">${progressPercent}% Completed</p>
+                </div>
+
+                ${user.taskClaimed ? `
+                    <div class="bg-emerald-500/10 border border-emerald-500/30 p-3 rounded-xl text-center text-xs text-emerald-400 font-bold">
+                        ✅ Reward Already Claimed Successfully!
+                    </div>
+                ` : isEligible ? `
+                    <form action="/task/claim" method="POST">
+                        <button type="submit" class="w-full bg-gradient-to-r from-green-600 to-emerald-500 hover:from-green-500 hover:to-emerald-400 text-white font-bold p-3 rounded-xl shadow-lg shadow-green-500/20 transition-all text-xs">Claim ₹100 Reward Now</button>
+                    </form>
+                ` : `
+                    <button type="button" disabled class="w-full bg-gray-800 text-gray-500 font-bold p-3 rounded-xl border border-gray-700 text-xs cursor-not-allowed">Complete ₹10,000 Deposit to Unlock</button>
+                `}
+            </div>
+
+            <a href="/home" class="block text-center text-xs text-gray-400 mt-3 hover:text-white underline">Back to Home</a>
+        </div>
+    `;
+    res.send(renderLayout('Task Center', content, req.session.user, req));
+});
+
+app.post('/task/claim', async (req, res) => {
+    if (!req.session || !req.session.user) return res.redirect('/login');
     let user = await User.findOne({ username: req.session.user.username });
     if (!user) return res.redirect('/login');
-    
-    const todayStr = new Date().toDateString();
-    if (user.lastCheckInDate === todayStr) {
-        return res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-yellow-400">Already Claimed Today!</h2><p class="text-xs text-gray-300">You have already claimed your daily sign-in bonus of ₹4 today. Return tomorrow for your next reward!</p><a href="/home" class="inline-block bg-blue-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
+
+    if (user.taskClaimed) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">You have already claimed this task reward!</p><br><a href="/task" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
     }
 
-    user.lastCheckInDate = todayStr;
-    user.walletBalance = (user.walletBalance || 0) + 4;
+    let totalCompletedDeposit = 0;
+    (user.deposits || []).forEach(d => {
+        if (d.status === 'Completed' || d.status === 'Approved') {
+            totalCompletedDeposit += (d.amount || 0);
+        }
+    });
+
+    if (totalCompletedDeposit < 10000) {
+        return res.send(renderLayout('Error', `<p class="text-red-500 text-center font-bold">Deposit criteria not met yet!</p><br><a href="/task" class="text-blue-400 block text-center text-sm underline">Back</a>`, user, req));
+    }
+
+    user.taskClaimed = true;
+    user.walletBalance = (user.walletBalance || 0) + 100;
+    
+    if (!user.deposits) user.deposits = [];
+    user.deposits.push({
+        amount: 100,
+        utr: 'TASK_BONUS_' + Math.floor(Math.random() * 900000 + 100000),
+        gateway: 'System Task Reward',
+        status: 'Completed',
+        date: getISTDateTime(),
+        used: false
+    });
+
     await user.save();
     req.session.user = user;
 
-    res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Wallet Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
+    res.send(renderLayout('Success', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 ₹100 Task Reward Claimed!</h2><p class="text-xs text-gray-300">₹100 has been successfully credited to your wallet balance.</p><a href="/task" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg">Back to Tasks</a></div>`, user, req));
 });
 
-// Support Hub Route (Offering Official TG Channel, 24x7 TG Support & Live Chat)
+// Support Hub Route (Offering Official TG Channel, 24x7 TG Support & Live Chat with SS Upload)
 app.get('/support', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
     const username = req.session.user.username;
@@ -975,10 +1058,11 @@ app.get('/support', async (req, res) => {
     let messages = await SupportMessage.find({ username }).sort({ _id: 1 }).lean();
 
     let chatHtml = messages.map(m => {
+        let ssTag = m.screenshotUrl ? `<br><a href="${m.screenshotUrl}" target="_blank" class="text-blue-200 underline text-[10px] font-bold block mt-1">📎 View Attached Screenshot</a>` : '';
         if (m.sender === 'user') {
-            return `<div class="flex justify-end mb-3"><div class="bg-blue-600 text-white text-xs p-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md"><p>${m.message}</p><span class="text-[9px] text-blue-200 block text-right mt-1">${m.date}</span></div></div>`;
+            return `<div class="flex justify-end mb-3"><div class="bg-blue-600 text-white text-xs p-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md"><p>${m.message}</p>${ssTag}<span class="text-[9px] text-blue-200 block text-right mt-1">${m.date}</span></div></div>`;
         } else {
-            return `<div class="flex justify-start mb-3"><div class="bg-gray-800 text-gray-100 text-xs p-3 rounded-2xl rounded-tl-none max-w-[80%] border border-gray-700 shadow-md"><p><b class="text-emerald-400">Customer Support:</b> ${m.message}</p><span class="text-[9px] text-gray-400 block text-right mt-1">${m.date}</span></div></div>`;
+            return `<div class="flex justify-start mb-3"><div class="bg-gray-800 text-gray-100 text-xs p-3 rounded-2xl rounded-tl-none max-w-[80%] border border-gray-700 shadow-md"><p><b class="text-emerald-400">Customer Support:</b> ${m.message}</p>${ssTag}<span class="text-[9px] text-gray-400 block text-right mt-1">${m.date}</span></div></div>`;
         }
     }).join('');
 
@@ -986,7 +1070,7 @@ app.get('/support', async (req, res) => {
         <div class="space-y-4 max-w-lg mx-auto">
             <h2 class="text-xl font-black text-amber-400 flex items-center gap-2"><span>🎧</span> Customer Support & Help Center</h2>
 
-            <!-- Quick Access Support Channels -->
+            <!-- Quick Access Support Channels (Direct Navigation) -->
             <div class="grid grid-cols-2 gap-3">
                 <a href="https://telegram.me/EarnXProo" target="_blank" class="bg-gradient-to-br from-blue-600 to-indigo-600 p-4 rounded-2xl text-white shadow-lg text-center flex flex-col items-center justify-center space-y-1 hover:scale-105 transition-all">
                     <span class="text-2xl">📢</span>
@@ -998,7 +1082,7 @@ app.get('/support', async (req, res) => {
                 </a>
             </div>
 
-            <!-- Live Customer Support Chat Box -->
+            <!-- Live Customer Support Chat Box with Screenshot Upload -->
             <div class="bg-gray-900/95 backdrop-blur-2xl rounded-3xl border border-gray-800 shadow-2xl flex flex-col h-[52vh] overflow-hidden">
                 <div class="bg-gradient-to-r from-amber-600 to-orange-600 p-3.5 text-white flex items-center justify-between shadow-md">
                     <div class="flex items-center gap-2.5">
@@ -1011,12 +1095,18 @@ app.get('/support', async (req, res) => {
                 </div>
 
                 <div id="chatMessages" class="flex-grow p-4 overflow-y-auto space-y-2 bg-gray-950/50">
-                    ${chatHtml.length ? chatHtml : '<div class="text-center text-gray-500 text-xs py-14">Hello! Send your query/issue below and our support team will reply shortly.</div>'}
+                    ${chatHtml.length ? chatHtml : '<div class="text-center text-gray-500 text-xs py-14">Hello! Send your query and screenshot below and our support team will reply shortly.</div>'}
                 </div>
 
-                <form action="/support/send" method="POST" class="p-3 bg-gray-900 border-t border-gray-800 flex gap-2">
-                    <input type="text" name="message" placeholder="Type your message here..." required autocomplete="off" class="flex-grow bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-500">
-                    <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white px-5 rounded-xl text-xs font-bold shadow-lg transition-all">Send</button>
+                <form action="/support/send" method="POST" enctype="multipart/form-data" class="p-3 bg-gray-900 border-t border-gray-800 space-y-2">
+                    <div class="flex gap-2">
+                        <input type="text" name="message" placeholder="Type your message here..." required autocomplete="off" class="flex-grow bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-500">
+                        <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white px-5 rounded-xl text-xs font-bold shadow-lg transition-all">Send</button>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <input type="file" name="supportScreenshot" accept="image/*" class="text-[10px] text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-gray-800 file:text-gray-200">
+                        <span class="text-[10px] text-gray-400">Optional SS Upload</span>
+                    </div>
                 </form>
             </div>
 
@@ -1031,14 +1121,17 @@ app.get('/support', async (req, res) => {
     res.send(renderLayout('Support Hub', content, req.session.user, req));
 });
 
-app.post('/support/send', async (req, res) => {
+app.post('/support/send', upload.single('supportScreenshot'), async (req, res) => {
     if (!req.session || !req.session.user) return res.redirect('/login');
     const { message } = req.body;
-    if (message && message.trim()) {
+    let screenshotUrl = req.file ? `/uploads/${req.file.filename}` : '';
+
+    if ((message && message.trim()) || screenshotUrl) {
         await SupportMessage.create({
             username: req.session.user.username,
             sender: 'user',
-            message: message.trim(),
+            message: message ? message.trim() : 'Attachment',
+            screenshotUrl: screenshotUrl,
             date: getISTDateTime()
         });
     }
@@ -1047,11 +1140,8 @@ app.post('/support/send', async (req, res) => {
 
 app.get('/home', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
-    let currentUser = await User.findOne({ username: req.session.user.username }, { uid: 1, name: 1, username: 1, lastCheckInDate: 1 }).lean();
+    let currentUser = await User.findOne({ username: req.session.user.username }, { uid: 1, name: 1, username: 1, taskClaimed: 1 }).lean();
     if (!currentUser) return res.redirect('/login');
-
-    const todayStr = new Date().toDateString();
-    const alreadyCheckedIn = currentUser.lastCheckInDate === todayStr;
 
     const topic1Text = `EarnX Pro represents the absolute pinnacle of international financial technology, high-frequency digital liquidity engineering, and decentralized asset management ecosystems. Designed with elite institutional-grade infrastructure, our platform bridges the complex gap between modern retail participants and global capital markets. We deliver unprecedented operational velocity, unmatched algorithmic stability, and rigorous multi-layered cryptographic security protocols to safeguard every transaction and user portfolio worldwide.`;
     const topic2Text = `Security, absolute transparency, and ultra-low latency liquidity velocity form the unyielding triad upon which EarnX Pro's operational architecture is built. Our proprietary risk management frameworks, continuous real-time market auditing, and dedicated compliance systems ensure an uncompromised trading environment. Empowering thousands of visionary participants globally, EarnX Pro continues to pioneer sustainable wealth creation and cutting-edge digital asset solutions tailored for the future of finance.`;
@@ -1079,9 +1169,9 @@ app.get('/home', async (req, res) => {
                     <span class="text-2xl group-hover:scale-110 transition-transform">💸</span>
                     <span class="text-[11px] font-bold text-purple-400">Withdraw</span>
                 </a>
-                <a href="/daily-signin" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
-                    <span class="text-2xl group-hover:scale-110 transition-transform">🎁</span>
-                    <span class="text-[11px] font-bold ${alreadyCheckedIn ? 'text-gray-400' : 'text-yellow-400'}">${alreadyCheckedIn ? 'Claimed' : 'Sign In'}</span>
+                <a href="/task" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
+                    <span class="text-2xl group-hover:scale-110 transition-transform">🎯</span>
+                    <span class="text-[11px] font-bold text-yellow-400">Task</span>
                 </a>
                 <a href="/support" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
                     <span class="text-2xl group-hover:scale-110 transition-transform">🎧</span>
@@ -2118,10 +2208,11 @@ app.get('/admin', async (req, res) => {
         if (selectedChatUser) {
             let chatMsgs = await SupportMessage.find({ username: selectedChatUser }).sort({ _id: 1 }).lean();
             let chatLogHtml = chatMsgs.map(m => {
+                let ssTag = m.screenshotUrl ? `<br><a href="${m.screenshotUrl}" target="_blank" class="text-blue-300 underline text-[10px] font-bold block mt-1">📎 View Attached Screenshot</a>` : '';
                 if (m.sender === 'user') {
-                    return `<div class="flex justify-start mb-2"><div class="bg-gray-800 text-white text-xs p-3 rounded-xl max-w-[75%] border border-gray-700"><b>${m.username}:</b> ${m.message}<span class="block text-[8px] text-gray-400 mt-1">${m.date}</span></div></div>`;
+                    return `<div class="flex justify-start mb-2"><div class="bg-gray-800 text-white text-xs p-3 rounded-xl max-w-[75%] border border-gray-700"><b>${m.username}:</b> ${m.message}${ssTag}<span class="block text-[8px] text-gray-400 mt-1">${m.date}</span></div></div>`;
                 } else {
-                    return `<div class="flex justify-end mb-2"><div class="bg-emerald-600 text-white text-xs p-3 rounded-xl max-w-[75%]"><b>Admin:</b> ${m.message}<span class="block text-[8px] text-emerald-200 mt-1">${m.date}</span></div></div>`;
+                    return `<div class="flex justify-end mb-2"><div class="bg-emerald-600 text-white text-xs p-3 rounded-xl max-w-[75%]"><b>Admin:</b> ${m.message}${ssTag}<span class="block text-[8px] text-emerald-200 mt-1">${m.date}</span></div></div>`;
                 }
             }).join('');
 
@@ -2132,10 +2223,16 @@ app.get('/admin', async (req, res) => {
                     <div class="bg-gray-950 p-4 rounded-2xl h-80 overflow-y-auto border border-gray-800 space-y-2" id="adminChatContainer">
                         ${chatLogHtml.length ? chatLogHtml : '<p class="text-gray-500 text-xs text-center py-20">No messages in this chat yet.</p>'}
                     </div>
-                    <form action="/admin/support/reply" method="POST" class="flex gap-2">
+                    <form action="/admin/support/reply" method="POST" enctype="multipart/form-data" class="space-y-2">
                         <input type="hidden" name="username" value="${selectedChatUser}">
-                        <input type="text" name="message" placeholder="Type reply as Admin..." required autocomplete="off" class="flex-grow bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-500">
-                        <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white px-5 rounded-xl text-xs font-bold shadow">Send Reply</button>
+                        <div class="flex gap-2">
+                            <input type="text" name="message" placeholder="Type reply as Admin..." required autocomplete="off" class="flex-grow bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-500">
+                            <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white px-5 rounded-xl text-xs font-bold shadow">Send Reply</button>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <input type="file" name="adminScreenshot" accept="image/*" class="text-[10px] text-gray-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-semibold file:bg-gray-800 file:text-gray-200">
+                            <span class="text-[10px] text-gray-400">Optional SS Upload</span>
+                        </div>
                     </form>
                 </div>
                 <script>
@@ -2248,14 +2345,17 @@ app.get('/admin', async (req, res) => {
     res.send(renderLayout('Admin Panel', content, req.session.user, req));
 });
 
-app.post('/admin/support/reply', async (req, res) => {
+app.post('/admin/support/reply', upload.single('adminScreenshot'), async (req, res) => {
     if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, message } = req.body;
-    if (username && message && message.trim()) {
+    let screenshotUrl = req.file ? `/uploads/${req.file.filename}` : '';
+
+    if ((username && message && message.trim()) || screenshotUrl) {
         await SupportMessage.create({
             username: username.trim().toLowerCase(),
             sender: 'admin',
-            message: message.trim(),
+            message: message ? message.trim() : 'Attachment',
+            screenshotUrl: screenshotUrl,
             date: getISTDateTime()
         });
     }
