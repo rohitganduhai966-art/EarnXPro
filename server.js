@@ -102,13 +102,15 @@ const userSchema = new mongoose.Schema({
     taskClaimed: { type: Boolean, default: false }
 });
 
-// Live Customer Support Chat Schema
+// Live Customer Support Chat Schema with Admin Read Tracking
 const supportMessageSchema = new mongoose.Schema({
     username: { type: String, lowercase: true, trim: true },
     sender: { type: String, enum: ['user', 'admin'] },
     adminName: { type: String, default: 'EarnXPro Support' },
     message: String,
     screenshotUrl: String,
+    is_read_by_admin: { type: Boolean, default: false },
+    is_read_by_user: { type: Boolean, default: false },
     date: { type: String, default: () => getISTDateTime() }
 });
 
@@ -219,22 +221,27 @@ async function detectFakeOrFraudPayment(utr, amount, clientUpiId) {
     return { isFake: false, reason: `Passed security check via ${appSourceCheck.appName}` };
 }
 
-// Amount Range + Active Status (ON/OFF) ke hisab se UPI fetch karne ka logic
+// Amount Range + Active Status (ON/OFF) ke hisab se UPI fetch karne ka logic with Rotation Fix
 async function getUpiIdForAmount(amount) {
     try {
         const amt = parseFloat(amount);
-        let upiDoc = await UpiConfig.findOne({
+        let upiDocs = await UpiConfig.find({
             isActive: true,
             minAmount: { $lte: amt },
             maxAmount: { $gte: amt }
         }).lean();
 
-        if (upiDoc && upiDoc.upiId) {
-            return upiDoc.upiId;
+        if (upiDocs && upiDocs.length > 0) {
+            const randomIndex = Math.floor(Math.random() * upiDocs.length);
+            return upiDocs[randomIndex].upiId;
         }
 
-        let fallbackUpi = await UpiConfig.findOne({ isActive: true }).lean();
-        return fallbackUpi ? fallbackUpi.upiId : 'rubeena.rashid@ptyes';
+        let fallbackUpis = await UpiConfig.find({ isActive: true }).lean();
+        if (fallbackUpis && fallbackUpis.length > 0) {
+            const randomIndex = Math.floor(Math.random() * fallbackUpis.length);
+            return fallbackUpis[randomIndex].upiId;
+        }
+        return 'rubeena.rashid@ptyes';
     } catch (err) {
         return 'rubeena.rashid@ptyes';
     }
@@ -1060,10 +1067,13 @@ app.post('/task/claim', async (req, res) => {
     res.send(renderLayout('Success', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 ₹100 Task Reward Claimed!</h2><p class="text-xs text-gray-300">₹100 has been successfully credited to your wallet balance.</p><a href="/task" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg">Back to Tasks</a></div>`, user, req));
 });
 
-// Support Hub Route (Offering Official TG Channel, 24x7 TG Support & Live Chat with SS Upload)
+// Support Hub Route with Unread Messages Marked as Read when Viewed
 app.get('/support', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
     const username = req.session.user.username;
+
+    // Mark all admin messages in this chat as read by user
+    await SupportMessage.updateMany({ username, sender: 'admin', is_read_by_user: false }, { is_read_by_user: true });
 
     let messages = await SupportMessage.find({ username }).sort({ _id: 1 }).lean();
 
@@ -1126,9 +1136,67 @@ app.get('/support', async (req, res) => {
         <script>
             const chatBox = document.getElementById('chatMessages');
             if(chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Live polling for new messages and auto mark as read when viewed
+            setInterval(async () => {
+                try {
+                    const res = await fetch('/api/support/messages');
+                    const data = await res.json();
+                    if(data && data.messages) {
+                        let html = '';
+                        if(data.messages.length === 0) {
+                            html = '<div class="text-center text-gray-500 text-xs py-14">Hello! Send your query and screenshot below and our support team will reply shortly.</div>';
+                        } else {
+                            html = data.messages.map(m => {
+                                let ssTag = m.screenshotUrl ? \`<br><a href="\${m.screenshotUrl}" target="_blank" class="text-blue-200 underline text-[10px] font-bold block mt-1">📎 View Attached Screenshot</a>\` : '';
+                                if (m.sender === 'user') {
+                                    return \`<div class="flex justify-end mb-3"><div class="bg-blue-600 text-white text-xs p-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md"><p>\${m.message}</p>\${ssTag}<span class="text-[9px] text-blue-200 block text-right mt-1">\${m.date}</span></div></div>\`;
+                                } else {
+                                    return \`<div class="flex justify-start mb-3"><div class="bg-gray-800 text-gray-100 text-xs p-3 rounded-2xl rounded-tl-none max-w-[80%] border border-gray-700 shadow-md"><p><b class="text-emerald-400">\${m.adminName || 'EarnXPro Support'}</b>: \${m.message}</p>\${ssTag}<span class="text-[9px] text-gray-400 block text-right mt-1">\${m.date}</span></div></div>\`;
+                                }
+                            }).join('');
+                        }
+                        if(chatBox.innerHTML.trim() !== html.trim()) {
+                            chatBox.innerHTML = html;
+                            chatBox.scrollTop = chatBox.scrollHeight;
+                        }
+                    }
+                } catch(e) {}
+            }, 3000);
         </script>
     `;
     res.send(renderLayout('Support Hub', content, req.session.user, req));
+});
+
+// API endpoint for live support message polling and unread counting
+app.get('/api/support/messages', async (req, res) => {
+    if (!req.session || !req.session.user) return res.json({ messages: [], unreadCount: 0 });
+    const username = req.session.user.username;
+    
+    // Auto mark as read when user fetches messages via active support page view
+    await SupportMessage.updateMany({ username, sender: 'admin', is_read_by_user: false }, { is_read_by_user: true });
+
+    let messages = await SupportMessage.find({ username }).sort({ _id: 1 }).lean();
+    res.json({ messages });
+});
+
+// API endpoint for user notification badge count (combines system notifications and unread support replies)
+app.get('/api/notifications/count', async (req, res) => {
+    if (!req.session || !req.session.user) return res.status(401).json({ count: 0 });
+    let currentUser = await User.findOne({ username: req.session.user.username }, { notifications: 1 }).lean();
+    
+    let sysUnread = 0;
+    if (currentUser && currentUser.notifications) {
+        sysUnread = currentUser.notifications.filter(n => !n.is_read).length;
+    }
+
+    let supportUnread = await SupportMessage.countDocuments({ 
+        username: req.session.user.username, 
+        sender: 'admin', 
+        is_read_by_user: false 
+    });
+
+    res.json({ count: sysUnread + supportUnread });
 });
 
 app.post('/support/send', upload.single('supportScreenshot'), async (req, res) => {
@@ -1142,6 +1210,8 @@ app.post('/support/send', upload.single('supportScreenshot'), async (req, res) =
             sender: 'user',
             message: message ? message.trim() : 'Attachment',
             screenshotUrl: screenshotUrl,
+            is_read_by_admin: false,
+            is_read_by_user: true,
             date: getISTDateTime()
         });
     }
@@ -1536,15 +1606,6 @@ app.get('/team', async (req, res) => {
     res.send(renderLayout('Team', content, req.session.user, req));
 });
 
-app.get('/api/notifications/count', async (req, res) => {
-    if (!req.session || !req.session.user) return res.status(401).json({ count: 0 });
-    let currentUser = await User.findOne({ username: req.session.user.username }, { notifications: 1 }).lean();
-    if (!currentUser || !currentUser.notifications) return res.json({ count: 0 });
-    
-    const unreadCount = currentUser.notifications.filter(n => !n.is_read).length;
-    res.json({ count: unreadCount });
-});
-
 app.post('/api/notifications/mark-read', async (req, res) => {
     try {
         if (!req.session || !req.session.user) return res.status(401).json({ success: false, error: "Unauthorized" });
@@ -1556,6 +1617,8 @@ app.post('/api/notifications/mark-read', async (req, res) => {
             });
             await user.save();
         }
+
+        await SupportMessage.updateMany({ username: req.session.user.username, sender: 'admin', is_read_by_user: false }, { is_read_by_user: true });
 
         res.status(200).json({ success: true, message: "Notifications marked as read." });
     } catch (error) {
@@ -1628,6 +1691,7 @@ app.get('/account/notifications', async (req, res) => {
         currentUser.notifications.forEach(n => { n.is_read = true; });
         await currentUser.save();
     }
+    await SupportMessage.updateMany({ username: req.session.user.username, sender: 'admin', is_read_by_user: false }, { is_read_by_user: true });
 
     let notificationsHtml = (currentUser.notifications || []).map(n => `
         <div class="border border-gray-800 bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl text-xs space-y-2 shadow-2xl">
@@ -1639,11 +1703,26 @@ app.get('/account/notifications', async (req, res) => {
         </div>
     `).join('');
 
+    let supportReplies = await SupportMessage.find({ username: req.session.user.username, sender: 'admin' }).sort({ _id: -1 }).lean();
+    let supportRepliesHtml = supportReplies.map(m => `
+        <div class="border border-amber-500/30 bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-4 rounded-3xl text-xs space-y-2 shadow-2xl">
+            <div class="flex justify-between items-center text-amber-400 font-bold text-sm">
+                <span>🎧 Support Reply (${m.adminName || 'Support'})</span>
+                <span class="text-[10px] text-gray-400">${m.date}</span>
+            </div>
+            <p class="text-gray-200 leading-relaxed notification-message-box">${m.message}</p>
+            ${m.screenshotUrl ? `<a href="${m.screenshotUrl}" target="_blank" class="text-blue-400 underline font-bold mt-1 inline-block">📎 View Attached Screenshot</a>` : ''}
+            <div class="text-right pt-1"><a href="/support" class="text-cyan-400 underline font-bold">Open Chat →</a></div>
+        </div>
+    `).join('');
+
     const content = `
         <div class="space-y-4 max-w-lg mx-auto">
-            <h2 class="text-xl font-black text-cyan-400 flex items-center gap-2"><span>🔔</span> System Notifications</h2>
+            <h2 class="text-xl font-black text-cyan-400 flex items-center gap-2"><span>🔔</span> System Notifications & Support Replies</h2>
             <div class="space-y-3">
-                ${notificationsHtml.length ? notificationsHtml : '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No notifications found.</p>'}
+                ${notificationsHtml}
+                ${supportRepliesHtml}
+                ${(!notificationsHtml && !supportRepliesHtml) ? '<p class="text-center text-gray-400 py-12 text-sm bg-gray-900/50 rounded-2xl border border-gray-800">No notifications found.</p>' : ''}
             </div>
             <a href="/account" class="block text-center bg-gray-800/80 backdrop-blur-md border border-gray-700 hover:bg-gray-800 text-white p-3 rounded-xl font-bold text-sm mt-4 shadow-lg">Back to Account</a>
         </div>
@@ -1699,7 +1778,10 @@ app.get('/account', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username }, { uid: 1, name: 1, username: 1, walletBalance: 1, notifications: 1 }).lean();
     if (!currentUser) return res.redirect('/login');
-    const unreadCountInitial = (currentUser.notifications || []).filter(n => !n.is_read).length;
+    
+    let sysUnread = (currentUser.notifications || []).filter(n => !n.is_read).length;
+    let supportUnread = await SupportMessage.countDocuments({ username: req.session.user.username, sender: 'admin', is_read_by_user: false });
+    const unreadCountInitial = sysUnread + supportUnread;
 
     const content = `
         <div class="flex items-center justify-center py-2">
@@ -1750,7 +1832,7 @@ app.get('/account', async (req, res) => {
                 <a href="/account/notifications" class="menu-link-btn">
                     <span class="flex items-center gap-3">
                         <span>🔔</span> System Notifications 
-                        ${unreadCountInitial > 0 ? `<span class="bg-cyan-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full">${unreadCountInitial}</span>` : ''}
+                        <span id="notifBadge" class="${unreadCountInitial > 0 ? '' : 'hidden'} bg-cyan-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full">${unreadCountInitial}</span>
                     </span>
                     <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                 </a>
@@ -1761,6 +1843,24 @@ app.get('/account', async (req, res) => {
                 </a>
             </div>
         </div>
+        <script>
+            // Live poll unread notifications count
+            setInterval(async () => {
+                try {
+                    const res = await fetch('/api/notifications/count');
+                    const data = await res.json();
+                    const badge = document.getElementById('notifBadge');
+                    if(badge) {
+                        if(data.count > 0) {
+                            badge.textContent = data.count;
+                            badge.classList.remove('hidden');
+                        } else {
+                            badge.classList.add('hidden');
+                        }
+                    }
+                } catch(e){}
+            }, 3000);
+        </script>
     `;
     res.send(renderLayout('Account Dashboard', content, req.session.user, req));
 });
@@ -2221,10 +2321,20 @@ app.get('/admin', async (req, res) => {
 
     let supportChatListHtml = '';
     if (supportUsersList && supportUsersList.length > 0) {
-        supportChatListHtml = supportUsersList.map(chatUser => `
-            <a href="/admin?tab=support-chat&chatUser=${chatUser}" class="block bg-gray-800/90 hover:bg-gray-800 p-4 rounded-2xl mb-2 border border-gray-700 transition-all">
-                <p class="font-bold text-amber-400 text-sm">💬 Chat User: ${chatUser}</p>
-                <p class="text-xs text-gray-400 mt-1">Click to reply & view conversation history</p>
+        // Calculate unread count for each chat user
+        let chatListWithCounts = [];
+        for(let chatUsr of supportUsersList) {
+            let unreadCount = await SupportMessage.countDocuments({ username: chatUsr, sender: 'user', is_read_by_admin: false });
+            chatListWithCounts.push({ username: chatUsr, unreadCount });
+        }
+
+        supportChatListHtml = chatListWithCounts.map(item => `
+            <a href="/admin?tab=support-chat&chatUser=${item.username}" class="block bg-gray-800/90 hover:bg-gray-800 p-4 rounded-2xl mb-2 border border-gray-700 transition-all flex justify-between items-center">
+                <div>
+                    <p class="font-bold text-amber-400 text-sm">💬 Chat User: ${item.username}</p>
+                    <p class="text-xs text-gray-400 mt-1">Click to reply & view conversation history</p>
+                </div>
+                ${item.unreadCount > 0 ? `<span class="bg-red-500 text-white text-xs font-black px-2.5 py-1 rounded-full shadow">${item.unreadCount} Unread</span>` : `<span class="text-xs text-emerald-400 font-semibold">Seen</span>`}
             </a>
         `).join('');
     }
@@ -2273,6 +2383,9 @@ app.get('/admin', async (req, res) => {
     } else if (tab === 'support-chat') {
         const selectedChatUser = req.query.chatUser;
         if (selectedChatUser) {
+            // Mark user messages as read by admin when admin opens this chat
+            await SupportMessage.updateMany({ username: selectedChatUser, sender: 'user', is_read_by_admin: false }, { is_read_by_admin: true });
+
             let chatMsgs = await SupportMessage.find({ username: selectedChatUser }).sort({ _id: 1 }).lean();
             let chatLogHtml = chatMsgs.map(m => {
                 let ssTag = m.screenshotUrl ? `<br><a href="${m.screenshotUrl}" target="_blank" class="text-blue-300 underline text-[10px] font-bold block mt-1">📎 View Attached Screenshot</a>` : '';
@@ -2305,6 +2418,20 @@ app.get('/admin', async (req, res) => {
                 <script>
                     const c = document.getElementById('adminChatContainer');
                     c.scrollTop = c.scrollHeight;
+                    // Auto-refresh admin chat view live for incoming user messages
+                    setInterval(() => {
+                        fetch(window.location.href)
+                            .then(res => res.text())
+                            .then(html => {
+                                const parser = new DOMParser();
+                                const doc = parser.parseFromString(html, 'text/html');
+                                const newContainer = doc.getElementById('adminChatContainer');
+                                if(newContainer && c && c.innerHTML.trim() !== newContainer.innerHTML.trim()) {
+                                    c.innerHTML = newContainer.innerHTML;
+                                    c.scrollTop = c.scrollHeight;
+                                }
+                            }).catch(e => {});
+                    }, 4000);
                 </script>
             `;
         } else {
@@ -2425,6 +2552,8 @@ app.post('/admin/support/reply', upload.single('adminScreenshot'), async (req, r
             adminName: dynamicAgent,
             message: message ? message.trim() : 'Attachment',
             screenshotUrl: screenshotUrl,
+            is_read_by_admin: true,
+            is_read_by_user: false,
             date: getISTDateTime()
         });
     }
@@ -2514,7 +2643,7 @@ app.post('/admin/add-balance', async (req, res) => {
             });
         }
 
-        await user.save();
+        await user ke save() ko chhor ke user.save();
     }
     res.redirect('/admin?tab=users');
 });
@@ -2574,7 +2703,7 @@ app.post('/admin/send-funds', async (req, res) => {
         });
         await user.save();
     }
-    res.redirect('/admin?tab=send-funds');
+    res.redirect('/admin?send-funds');
 });
 
 app.post('/admin/send-message', async (req, res) => {
@@ -2598,5 +2727,5 @@ app.post('/admin/send-message', async (req, res) => {
 
 app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
-    await setupTelegramWebhook();
+    await setupzendWebhook = setupTelegramWebhook();
 });
