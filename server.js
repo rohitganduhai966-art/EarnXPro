@@ -93,6 +93,14 @@ const userSchema = new mongoose.Schema({
     lastCheckInDate: { type: String, default: null }
 });
 
+// Live Customer Support Chat Schema
+const supportMessageSchema = new mongoose.Schema({
+    username: { type: String, lowercase: true, trim: true },
+    sender: { type: String, enum: ['user', 'admin'] },
+    message: String,
+    date: { type: String, default: () => getISTDateTime() }
+});
+
 const productSchema = new mongoose.Schema({
     _id: String,
     name: String,
@@ -123,6 +131,7 @@ const chatIdSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model('User', userSchema);
+const SupportMessage = mongoose.model('SupportMessage', supportMessageSchema);
 const Product = mongoose.model('Product', productSchema);
 const UpiConfig = mongoose.model('UpiConfig', upiConfigSchema);
 const Otp = mongoose.model('Otp', otpSchema);
@@ -958,6 +967,84 @@ app.get('/daily-signin', async (req, res) => {
     res.send(renderLayout('Daily Sign In', `<div class="bg-gray-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 text-center space-y-4 mt-10 shadow-xl"><h2 class="text-xl font-black text-green-400">🎉 Bonus Successfully Claimed!</h2><p class="text-xs text-gray-300">₹4 has been instantly credited to your Wallet Balance.</p><a href="/home" class="inline-block bg-green-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs mt-3 shadow-lg shadow-blue-500/20">Back to Home</a></div>`, req.session.user, req));
 });
 
+// Support Hub Route (Offering Official TG Channel, 24x7 TG Support & Live Chat)
+app.get('/support', async (req, res) => {
+    if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
+    const username = req.session.user.username;
+
+    let messages = await SupportMessage.find({ username }).sort({ _id: 1 }).lean();
+
+    let chatHtml = messages.map(m => {
+        if (m.sender === 'user') {
+            return `<div class="flex justify-end mb-3"><div class="bg-blue-600 text-white text-xs p-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md"><p>${m.message}</p><span class="text-[9px] text-blue-200 block text-right mt-1">${m.date}</span></div></div>`;
+        } else {
+            return `<div class="flex justify-start mb-3"><div class="bg-gray-800 text-gray-100 text-xs p-3 rounded-2xl rounded-tl-none max-w-[80%] border border-gray-700 shadow-md"><p><b class="text-emerald-400">Customer Support:</b> ${m.message}</p><span class="text-[9px] text-gray-400 block text-right mt-1">${m.date}</span></div></div>`;
+        }
+    }).join('');
+
+    const content = `
+        <div class="space-y-4 max-w-lg mx-auto">
+            <h2 class="text-xl font-black text-amber-400 flex items-center gap-2"><span>🎧</span> Customer Support & Help Center</h2>
+
+            <!-- Quick Access Support Channels -->
+            <div class="grid grid-cols-2 gap-3">
+                <a href="https://telegram.me/EarnXProo" target="_blank" class="bg-gradient-to-br from-blue-600 to-indigo-600 p-4 rounded-2xl text-white shadow-lg text-center flex flex-col items-center justify-center space-y-1 hover:scale-105 transition-all">
+                    <span class="text-2xl">📢</span>
+                    <span class="text-xs font-bold">Official TG Channel</span>
+                </a>
+                <a href="https://telegram.me/EarnXPro24x7Support" target="_blank" class="bg-gradient-to-br from-sky-600 to-blue-700 p-4 rounded-2xl text-white shadow-lg text-center flex flex-col items-center justify-center space-y-1 hover:scale-105 transition-all">
+                    <span class="text-2xl">💬</span>
+                    <span class="text-xs font-bold">24x7 TG Support</span>
+                </a>
+            </div>
+
+            <!-- Live Customer Support Chat Box -->
+            <div class="bg-gray-900/95 backdrop-blur-2xl rounded-3xl border border-gray-800 shadow-2xl flex flex-col h-[52vh] overflow-hidden">
+                <div class="bg-gradient-to-r from-amber-600 to-orange-600 p-3.5 text-white flex items-center justify-between shadow-md">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-xl">🛠️</span>
+                        <div>
+                            <h3 class="font-black text-xs">Live Customer Support Chat</h3>
+                            <p class="text-[9px] text-amber-100 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> Agents Active</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="chatMessages" class="flex-grow p-4 overflow-y-auto space-y-2 bg-gray-950/50">
+                    ${chatHtml.length ? chatHtml : '<div class="text-center text-gray-500 text-xs py-14">Hello! Send your query/issue below and our support team will reply shortly.</div>'}
+                </div>
+
+                <form action="/support/send" method="POST" class="p-3 bg-gray-900 border-t border-gray-800 flex gap-2">
+                    <input type="text" name="message" placeholder="Type your message here..." required autocomplete="off" class="flex-grow bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-500">
+                    <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white px-5 rounded-xl text-xs font-bold shadow-lg transition-all">Send</button>
+                </form>
+            </div>
+
+            <a href="/account" class="block text-center text-xs text-gray-400 mt-2 hover:text-white underline">Back to Account</a>
+        </div>
+
+        <script>
+            const chatBox = document.getElementById('chatMessages');
+            if(chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+        </script>
+    `;
+    res.send(renderLayout('Support Hub', content, req.session.user, req));
+});
+
+app.post('/support/send', async (req, res) => {
+    if (!req.session || !req.session.user) return res.redirect('/login');
+    const { message } = req.body;
+    if (message && message.trim()) {
+        await SupportMessage.create({
+            username: req.session.user.username,
+            sender: 'user',
+            message: message.trim(),
+            date: getISTDateTime()
+        });
+    }
+    res.redirect('/support');
+});
+
 app.get('/home', async (req, res) => {
     if (!req.session || !req.session.user || req.session.user.is_admin) return res.redirect('/login');
     let currentUser = await User.findOne({ username: req.session.user.username }, { uid: 1, name: 1, username: 1, lastCheckInDate: 1 }).lean();
@@ -996,7 +1083,7 @@ app.get('/home', async (req, res) => {
                     <span class="text-2xl group-hover:scale-110 transition-transform">🎁</span>
                     <span class="text-[11px] font-bold ${alreadyCheckedIn ? 'text-gray-400' : 'text-yellow-400'}">${alreadyCheckedIn ? 'Claimed' : 'Sign In'}</span>
                 </a>
-                <a href="https://telegram.me/EarnXPro24x7Support" target="_blank" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
+                <a href="/support" class="bg-gradient-to-b from-gray-900/90 to-gray-950/90 backdrop-blur-xl hover:from-gray-800 hover:to-gray-900 border border-gray-800 hover:border-emerald-500/30 p-3 rounded-2xl flex flex-col items-center justify-center space-y-1 shadow-xl transition-all group">
                     <span class="text-2xl group-hover:scale-110 transition-transform">🎧</span>
                     <span class="text-[11px] font-bold text-emerald-400">Support</span>
                 </a>
@@ -1488,7 +1575,7 @@ app.get('/account', async (req, res) => {
             <div class="action-buttons-stack">
                 <a href="/deposit" class="deposit-btn">💰 Deposit Funds</a>
                 <a href="/withdrawal" class="withdraw-btn">💸 Bind UPI ID</a>
-                <a href="https://telegram.me/EarnXPro24x7Support" target="_blank" class="btn-support">🎧 Customer Care Support</a>
+                <a href="/support" class="btn-support">🎧 Customer Care Support</a>
             </div>
 
             <div class="space-y-3 mt-4 action-buttons-stack">
@@ -1858,12 +1945,13 @@ app.get('/admin', async (req, res) => {
     if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     let tab = req.query.tab || 'users';
 
-    const [regularUsers, products, dbUpis, allUsersWithDeposits, allUsersWithInvestments] = await Promise.all([
+    const [regularUsers, products, dbUpis, allUsersWithDeposits, allUsersWithInvestments, supportUsersList] = await Promise.all([
         User.find({ is_admin: { $ne: true } }).lean(),
         Product.find({}).lean(),
         UpiConfig.find({}).lean(),
         User.find({ "deposits.status": { $in: ["Pending", "Fake / Suspicious"] } }).lean(),
-        User.find({ "investments": { $exists: true, $ne: [] } }, { uid: 1, investments: 1 }).lean()
+        User.find({ "investments": { $exists: true, $ne: [] } }, { uid: 1, investments: 1 }).lean(),
+        SupportMessage.distinct('username').lean()
     ]);
 
     let autoProducts = generateAutoOrders();
@@ -1974,39 +2062,15 @@ app.get('/admin', async (req, res) => {
         </div>
     `).join('');
 
-    const productInvestorsMap = {};
-    allUsersWithInvestments.forEach(u => {
-        (u.investments || []).forEach(inv => {
-            if (!productInvestorsMap[inv.productId]) productInvestorsMap[inv.productId] = [];
-            productInvestorsMap[inv.productId].push(`<span class="bg-gray-900 text-xs px-2.5 py-1 rounded-lg text-cyan-300 border border-gray-800 font-medium">UID: ${u.uid} (₹${inv.amount}) - ${inv.status}</span>`);
-        });
-    });
-
-    let productListHtml = products.map(p => {
-        let investorsList = productInvestorsMap[p._id] || [];
-        return `
-            <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm space-y-2 border border-gray-700 shadow">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <p class="font-bold text-emerald-400 text-base">${p.name}</p>
-                        <p class="text-gray-300 text-xs mt-0.5">Price: ₹${p.price} | Return: ₹${p.returnAmount}</p>
-                    </div>
-                    <form action="/admin/delete-product" method="POST">
-                        <input type="hidden" name="productId" value="${p._id}">
-                        <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
-                    </form>
-                </div>
-                <div class="border-t border-gray-700 pt-2.5">
-                    <p class="text-xs text-yellow-400 font-semibold mb-1.5">Investors (${investorsList.length}):</p>
-                    <div class="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
-                        ${investorsList.length ? investorsList.join('') : '<span class="text-xs text-gray-400">No investors yet.</span>'}
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-
-    let userOptionsHtml = regularUsers.map(u => `<option value="${u.username}">UID: ${u.uid} (${u.username})</option>`).join('');
+    let supportChatListHtml = '';
+    if (supportUsersList && supportUsersList.length > 0) {
+        supportChatListHtml = supportUsersList.map(chatUser => `
+            <a href="/admin?tab=support-chat&chatUser=${chatUser}" class="block bg-gray-800/90 hover:bg-gray-800 p-4 rounded-2xl mb-2 border border-gray-700 transition-all">
+                <p class="font-bold text-amber-400 text-sm">💬 Chat User: ${chatUser}</p>
+                <p class="text-xs text-gray-400 mt-1">Click to reply & view conversation history</p>
+            </a>
+        `).join('');
+    }
 
     let activeTabContent = '';
     if (tab === 'users') {
@@ -2049,9 +2113,62 @@ app.get('/admin', async (req, res) => {
                 <div class="max-h-60 overflow-y-auto space-y-2">${upiListHtml.length ? upiListHtml : '<p class="text-gray-400 text-sm text-center py-6">No UPI IDs configured.</p>'}</div>
             </div>
         `;
+    } else if (tab === 'support-chat') {
+        const selectedChatUser = req.query.chatUser;
+        if (selectedChatUser) {
+            let chatMsgs = await SupportMessage.find({ username: selectedChatUser }).sort({ _id: 1 }).lean();
+            let chatLogHtml = chatMsgs.map(m => {
+                if (m.sender === 'user') {
+                    return `<div class="flex justify-start mb-2"><div class="bg-gray-800 text-white text-xs p-3 rounded-xl max-w-[75%] border border-gray-700"><b>${m.username}:</b> ${m.message}<span class="block text-[8px] text-gray-400 mt-1">${m.date}</span></div></div>`;
+                } else {
+                    return `<div class="flex justify-end mb-2"><div class="bg-emerald-600 text-white text-xs p-3 rounded-xl max-w-[75%]"><b>Admin:</b> ${m.message}<span class="block text-[8px] text-emerald-200 mt-1">${m.date}</span></div></div>`;
+                }
+            }).join('');
+
+            activeTabContent = `
+                <div class="space-y-4">
+                    <a href="/admin?tab=support-chat" class="text-xs text-amber-400 hover:underline font-bold">← Back to All Chats</a>
+                    <h3 class="font-bold text-amber-400 text-base">Chat with ${selectedChatUser}</h3>
+                    <div class="bg-gray-950 p-4 rounded-2xl h-80 overflow-y-auto border border-gray-800 space-y-2" id="adminChatContainer">
+                        ${chatLogHtml.length ? chatLogHtml : '<p class="text-gray-500 text-xs text-center py-20">No messages in this chat yet.</p>'}
+                    </div>
+                    <form action="/admin/support/reply" method="POST" class="flex gap-2">
+                        <input type="hidden" name="username" value="${selectedChatUser}">
+                        <input type="text" name="message" placeholder="Type reply as Admin..." required autocomplete="off" class="flex-grow bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-xs text-white focus:outline-none focus:border-amber-500">
+                        <button type="submit" class="bg-amber-600 hover:bg-amber-500 text-white px-5 rounded-xl text-xs font-bold shadow">Send Reply</button>
+                    </form>
+                </div>
+                <script>
+                    const c = document.getElementById('adminChatContainer');
+                    c.scrollTop = c.scrollHeight;
+                </script>
+            `;
+        } else {
+            activeTabContent = `
+                <div class="space-y-4">
+                    <h3 class="font-bold text-amber-400 text-base">🎧 Live Customer Support Chats</h3>
+                    <div class="space-y-2">
+                        ${supportChatListHtml.length ? supportChatListHtml : '<p class="text-gray-400 text-xs text-center py-12">No active customer chats found.</p>'}
+                    </div>
+                </div>
+            `;
+        }
     } else if (tab === 'auto-orders') {
         activeTabContent = `<div class="space-y-2"><h3 class="font-bold text-cyan-400 mb-3 text-base">⚡ Live Automatic Rotating Orders</h3><p class="text-xs text-gray-300 mb-3">Ye orders system automatically generate aur rotate karta hai har user ke liye.</p>${autoOrdersHtml}</div>`;
     } else if (tab === 'products') {
+        let productListHtml = products.map(p => `
+            <div class="bg-gray-800/90 p-4 rounded-2xl mb-3 text-sm space-y-2 border border-gray-700 shadow flex justify-between items-center">
+                <div>
+                    <p class="font-bold text-emerald-400 text-base">${p.name}</p>
+                    <p class="text-gray-300 text-xs mt-0.5">Price: ₹${p.price} | Return: ₹${p.returnAmount}</p>
+                </div>
+                <form action="/admin/delete-product" method="POST">
+                    <input type="hidden" name="productId" value="${p._id}">
+                    <button type="submit" class="bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs text-white font-bold shadow">Delete</button>
+                </form>
+            </div>
+        `).join('');
+
         activeTabContent = `
             <div class="space-y-5">
                 <h3 class="font-bold text-yellow-400 text-base">📦 Add Custom Product</h3>
@@ -2063,10 +2180,11 @@ app.get('/admin', async (req, res) => {
                     <button type="submit" class="w-full bg-gradient-to-r from-yellow-600 to-amber-600 py-3 rounded-xl text-xs font-bold text-white shadow-lg shadow-yellow-500/20">Add Custom Product</button>
                 </form>
                 <h3 class="font-bold text-yellow-400 text-base mt-6">Custom Products List</h3>
-                <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml.join('') : '<p class="text-gray-400 text-sm text-center py-6">No custom products added.</p>'}</div>
+                <div class="max-h-96 overflow-y-auto space-y-2">${productListHtml.length ? productListHtml : '<p class="text-gray-400 text-sm text-center py-6">No custom products added.</p>'}</div>
             </div>
         `;
     } else if (tab === 'send-funds') {
+        let userOptionsHtml = regularUsers.map(u => `<option value="${u.username}">UID: ${u.uid} (${u.username})</option>`).join('');
         activeTabContent = `
             <div class="space-y-6">
                 <div class="bg-gray-800/80 p-5 rounded-2xl border border-gray-700 shadow-xl">
@@ -2116,6 +2234,7 @@ app.get('/admin', async (req, res) => {
                 <a href="/admin?tab=users" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'users' ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Users</a>
                 <a href="/admin?tab=deposits" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'deposits' ? 'bg-blue-600 text-white shadow-blue-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Deposits & Fake Detector</a>
                 <a href="/admin?tab=upi-manage" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'upi-manage' ? 'bg-purple-600 text-white shadow-purple-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">UPI Management</a>
+                <a href="/admin?tab=support-chat" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'support-chat' ? 'bg-amber-600 text-white shadow-amber-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">🎧 Support Chats</a>
                 <a href="/admin?tab=auto-orders" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'auto-orders' ? 'bg-cyan-600 text-white shadow-cyan-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Auto Orders</a>
                 <a href="/admin?tab=products" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'products' ? 'bg-yellow-600 text-white shadow-yellow-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Products</a>
                 <a href="/admin?tab=send-funds" class="px-3 py-1.5 rounded-xl font-bold whitespace-nowrap shadow transition-all ${tab === 'send-funds' ? 'bg-teal-600 text-white shadow-teal-500/20' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">Funds & Msg</a>
@@ -2127,6 +2246,20 @@ app.get('/admin', async (req, res) => {
         </div>
     `;
     res.send(renderLayout('Admin Panel', content, req.session.user, req));
+});
+
+app.post('/admin/support/reply', async (req, res) => {
+    if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
+    const { username, message } = req.body;
+    if (username && message && message.trim()) {
+        await SupportMessage.create({
+            username: username.trim().toLowerCase(),
+            sender: 'admin',
+            message: message.trim(),
+            date: getISTDateTime()
+        });
+    }
+    res.redirect(`/admin?tab=support-chat&chatUser=${username}`);
 });
 
 app.post('/admin/add-upi', async (req, res) => {
