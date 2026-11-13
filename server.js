@@ -31,7 +31,6 @@ function getISTDateTime() {
 function getDynamicAgentName() {
     const d = new Date();
     const dayNum = d.getDate();
-    // Unique dynamic agent identifier suffix based on date
     const agentCode = (dayNum * 7) % 50; 
     const paddedCode = String(agentCode).padStart(2, '0');
     return `EarnXPro Agent ${paddedCode}`;
@@ -107,6 +106,7 @@ const userSchema = new mongoose.Schema({
 const supportMessageSchema = new mongoose.Schema({
     username: { type: String, lowercase: true, trim: true },
     sender: { type: String, enum: ['user', 'admin'] },
+    adminName: { type: String, default: 'EarnXPro Support' },
     message: String,
     screenshotUrl: String,
     date: { type: String, default: () => getISTDateTime() }
@@ -1750,8 +1750,13 @@ app.get('/deposit', async (req, res) => {
     }).join('');
 
     const content = `
-        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4 deposit-page">
+        <div class="bg-gradient-to-br from-gray-900/90 via-gray-900/80 to-slate-900/90 backdrop-blur-2xl p-6 rounded-3xl border border-gray-800 shadow-2xl space-y-4 deposit-page relative">
             <h2 class="text-xl font-black text-emerald-400">Deposit Funds (₹100 - ₹50,000)</h2>
+
+            <!-- Modern floating copy toast notification -->
+            <div id="copyToast" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-gray-900 text-emerald-400 border border-emerald-500/40 px-4 py-2 rounded-xl text-xs font-bold shadow-2xl transition-all duration-300 opacity-0 pointer-events-none z-50">
+                ✅ Copied!
+            </div>
 
             <div class="deposit-warning">
                 ⚠️ <strong>Important Payment Notice:</strong> Please use only the 4 official UPI apps provided below. Fake screenshots or third-party apps will be instantly detected and flagged as fraudulent by our system.
@@ -1845,7 +1850,11 @@ app.get('/deposit', async (req, res) => {
 
             function copyUpiId() {
                 navigator.clipboard.writeText(fetchedUpiId);
-                alert('UPI ID Copied!');
+                const toast = document.getElementById('copyToast');
+                toast.style.opacity = '1';
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                }, 1800);
             }
 
             function launchOfficialApp(appType) {
