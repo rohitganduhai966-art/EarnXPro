@@ -27,6 +27,16 @@ function getISTDateTime() {
     });
 }
 
+// Dynamic Agent Name Generator based on day / date (e.g., EarnXPro Agent 09, 08, 06...)
+function getDynamicAgentName() {
+    const d = new Date();
+    const dayNum = d.getDate();
+    // Unique dynamic agent identifier suffix based on date
+    const agentCode = (dayNum * 7) % 50; 
+    const paddedCode = String(agentCode).padStart(2, '0');
+    return `EarnXPro Agent ${paddedCode}`;
+}
+
 // MongoDB Atlas Connection Setup with timeout fix
 const MONGO_URI = "mongodb+srv://EarnXPro0939:Faraz373737373777@cluster0.end6i26.mongodb.net/?appName=Cluster0";
 
@@ -1062,7 +1072,7 @@ app.get('/support', async (req, res) => {
         if (m.sender === 'user') {
             return `<div class="flex justify-end mb-3"><div class="bg-blue-600 text-white text-xs p-3 rounded-2xl rounded-tr-none max-w-[80%] shadow-md"><p>${m.message}</p>${ssTag}<span class="text-[9px] text-blue-200 block text-right mt-1">${m.date}</span></div></div>`;
         } else {
-            return `<div class="flex justify-start mb-3"><div class="bg-gray-800 text-gray-100 text-xs p-3 rounded-2xl rounded-tl-none max-w-[80%] border border-gray-700 shadow-md"><p><b class="text-emerald-400">Customer Support:</b> ${m.message}</p>${ssTag}<span class="text-[9px] text-gray-400 block text-right mt-1">${m.date}</span></div></div>`;
+            return `<div class="flex justify-start mb-3"><div class="bg-gray-800 text-gray-100 text-xs p-3 rounded-2xl rounded-tl-none max-w-[80%] border border-gray-700 shadow-md"><p><b class="text-emerald-400">${m.adminName || 'EarnXPro Support'}</b>: ${m.message}</p>${ssTag}<span class="text-[9px] text-gray-400 block text-right mt-1">${m.date}</span></div></div>`;
         }
     }).join('');
 
@@ -2212,7 +2222,7 @@ app.get('/admin', async (req, res) => {
                 if (m.sender === 'user') {
                     return `<div class="flex justify-start mb-2"><div class="bg-gray-800 text-white text-xs p-3 rounded-xl max-w-[75%] border border-gray-700"><b>${m.username}:</b> ${m.message}${ssTag}<span class="block text-[8px] text-gray-400 mt-1">${m.date}</span></div></div>`;
                 } else {
-                    return `<div class="flex justify-end mb-2"><div class="bg-emerald-600 text-white text-xs p-3 rounded-xl max-w-[75%]"><b>Admin:</b> ${m.message}${ssTag}<span class="block text-[8px] text-emerald-200 mt-1">${m.date}</span></div></div>`;
+                    return `<div class="flex justify-end mb-2"><div class="bg-emerald-600 text-white text-xs p-3 rounded-xl max-w-[75%]"><b>${m.adminName || 'EarnXPro Support'}:</b> ${m.message}${ssTag}<span class="block text-[8px] text-emerald-200 mt-1">${m.date}</span></div></div>`;
                 }
             }).join('');
 
@@ -2349,11 +2359,13 @@ app.post('/admin/support/reply', upload.single('adminScreenshot'), async (req, r
     if (!req.session || !req.session.user || !req.session.user.is_admin) return res.redirect('/login');
     const { username, message } = req.body;
     let screenshotUrl = req.file ? `/uploads/${req.file.filename}` : '';
+    let dynamicAgent = getDynamicAgentName();
 
     if ((username && message && message.trim()) || screenshotUrl) {
         await SupportMessage.create({
             username: username.trim().toLowerCase(),
             sender: 'admin',
+            adminName: dynamicAgent,
             message: message ? message.trim() : 'Attachment',
             screenshotUrl: screenshotUrl,
             date: getISTDateTime()
